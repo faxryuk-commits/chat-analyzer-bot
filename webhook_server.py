@@ -672,7 +672,8 @@ class CloudChatAnalyzerBot:
             logger.info(f"Обновление {update.update_id} успешно обработано")
         except Exception as e:
             logger.error(f"Ошибка при обработке обновления {update.update_id}: {e}")
-            raise
+            # Не поднимаем исключение, чтобы не прерывать обработку
+            pass
     
     def _get_user_display_name(self, user):
         """Получает отображаемое имя пользователя"""
@@ -1565,33 +1566,23 @@ def webhook():
         # Обрабатываем обновление синхронно для надежности
         try:
             import asyncio
-            import threading
             
-            # Обрабатываем webhook синхронно для избежания проблем с event loop
-            def process_webhook():
+            # Создаем новый event loop для каждого webhook
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            try:
+                # Обрабатываем webhook
+                loop.run_until_complete(bot.handle_webhook(update_dict))
+            except Exception as e:
+                logger.error(f"Ошибка при обработке webhook: {e}")
+            finally:
+                # Закрываем loop
                 try:
-                    # Создаем новый event loop
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    
-                    # Обрабатываем webhook
-                    loop.run_until_complete(bot.handle_webhook(update_dict))
-                    
-                except Exception as e:
-                    logger.error(f"Ошибка в process_webhook: {e}")
-                finally:
-                    # Убеждаемся, что loop закрыт
-                    try:
-                        if 'loop' in locals() and not loop.is_closed():
-                            loop.close()
-                    except:
-                        pass
-            
-            # Запускаем в отдельном потоке
-            thread = threading.Thread(target=process_webhook)
-            thread.daemon = True  # Делаем поток демоном
-            thread.start()
-            # Не ждем завершения потока, чтобы избежать блокировки
+                    if not loop.is_closed():
+                        loop.close()
+                except:
+                    pass
             
             logger.info(f"Webhook {update_id} успешно обработан")
         except Exception as e:
