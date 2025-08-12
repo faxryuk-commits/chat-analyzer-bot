@@ -86,6 +86,9 @@ class CloudChatAnalyzerBot:
         user = update.effective_user
         chat_id = update.effective_chat.id
         
+        # Логируем команду
+        logger.info(f"Команда /start от пользователя {user.id} в чате {chat_id}")
+        
         welcome_message = f"""
 🤖 **Добро пожаловать в Chat Analyzer Bot!**
 
@@ -212,6 +215,10 @@ class CloudChatAnalyzerBot:
     async def generate_report(self, update: Update, context):
         """Генерирует отчет по активности"""
         chat_id = update.effective_chat.id
+        user_id = update.effective_user.id
+        
+        # Логируем команду
+        logger.info(f"Команда /report от пользователя {user_id} в чате {chat_id}")
         
         days = 1
         if context.args:
@@ -509,8 +516,21 @@ class CloudChatAnalyzerBot:
             # Удаляем старые записи
             self.processed_updates = set(list(self.processed_updates)[-500:])
         
-        # Обрабатываем обновление
-        await self.application.process_update(update)
+        # Логируем обработку обновления
+        if update.message:
+            user = update.message.from_user
+            chat = update.message.chat
+            logger.info(f"Обрабатываем обновление {update_id}: пользователь {user.id} в чате {chat.id}")
+        
+        try:
+            # Обрабатываем обновление
+            await self.application.process_update(update)
+            logger.info(f"Обновление {update_id} успешно обработано")
+        except Exception as e:
+            logger.error(f"Ошибка при обработке обновления {update_id}: {e}")
+            # Удаляем из обработанных в случае ошибки
+            self.processed_updates.discard(update_id)
+            raise
     
     def _get_user_display_name(self, user):
         """Получает отображаемое имя пользователя"""
