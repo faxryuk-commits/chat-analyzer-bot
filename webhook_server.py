@@ -15,6 +15,7 @@ from config import BOT_TOKEN, ADMIN_USER_IDS, HISTORY_DAYS, REPORT_TIME, TASK_TI
 from database import DatabaseManager
 from text_analyzer import TextAnalyzer
 from report_generator import ReportGenerator
+from message_collector import MessageCollector
 
 # Настройка логирования
 logging.basicConfig(
@@ -30,6 +31,7 @@ class CloudChatAnalyzerBot:
         self.db = DatabaseManager()
         self.text_analyzer = TextAnalyzer()
         self.report_generator = ReportGenerator()
+        self.message_collector = MessageCollector(BOT_TOKEN, self.db, self.text_analyzer)
         self.active_chats = set()
         
         # Создаем приложение
@@ -64,6 +66,9 @@ class CloudChatAnalyzerBot:
         self.application.add_handler(CommandHandler("wordcloud", self.show_wordcloud))
         self.application.add_handler(CommandHandler("admin", self.admin_panel))
         self.application.add_handler(CommandHandler("collect_history", self.collect_history))
+        self.application.add_handler(CommandHandler("collect_chat", self.collect_chat_history))
+        self.application.add_handler(CommandHandler("daily_report", self.generate_daily_report))
+        self.application.add_handler(CommandHandler("setup_monitoring", self.setup_monitoring))
         
         # Обработчик сообщений
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
@@ -332,6 +337,141 @@ class CloudChatAnalyzerBot:
             return
         
         await update.message.reply_text("✅ История сообщений собрана!")
+    
+    async def collect_chat_history(self, update: Update, context):
+        """Собирает историю конкретного чата"""
+        user_id = update.effective_user.id
+        
+        if user_id not in ADMIN_USER_IDS:
+            await update.message.reply_text("❌ У вас нет прав администратора")
+            return
+        
+        # Получаем ID чата из аргументов или текущего чата
+        if context.args:
+            try:
+                chat_id = int(context.args[0])
+            except ValueError:
+                await update.message.reply_text("❌ Неверный формат ID чата. Используйте: /collect_chat <chat_id>")
+                return
+        else:
+            chat_id = update.effective_chat.id
+        
+        # Получаем количество дней
+        days = 45
+        if len(context.args) > 1:
+            try:
+                days = int(context.args[1])
+            except ValueError:
+                await update.message.reply_text("❌ Неверный формат количества дней")
+                return
+        
+        await update.message.reply_text(f"📥 Начинаем сбор истории для чата {chat_id} за последние {days} дней...")
+        
+        try:
+            # Запускаем сбор в отдельном потоке
+            def collect_async():
+                import asyncio
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                result = loop.run_until_complete(self.message_collector.collect_chat_history(chat_id, days))
+                loop.close()
+                return result
+            
+            import threading
+            thread = threading.Thread(target=collect_async)
+            thread.start()
+            
+            await update.message.reply_text("✅ Сбор истории запущен в фоновом режиме!")
+            
+        except Exception as e:
+            await update.message.reply_text(f"❌ Ошибка при сборе истории: {e}")
+    
+    async def generate_daily_report(self, update: Update, context):
+        """Генерирует ежедневный отчет"""
+        user_id = update.effective_user.id
+        
+        if user_id not in ADMIN_USER_IDS:
+            await update.message.reply_text("❌ У вас нет прав администратора")
+            return
+        
+        # Получаем ID чата
+        if context.args:
+            try:
+                chat_id = int(context.args[0])
+            except ValueError:
+                await update.message.reply_text("❌ Неверный формат ID чата. Используйте: /daily_report <chat_id>")
+                return
+        else:
+            chat_id = update.effective_chat.id
+        
+        await update.message.reply_text(f"📊 Генерируем ежедневный отчет для чата {chat_id}...")
+        
+        try:
+            report = await self.message_collector.generate_daily_report(chat_id)
+            
+            # Формируем отчет
+            report_text = f"""
+📊 **ЕЖЕДНЕВНЫЙ ОТЧЕТ**
+📅 Дата: {report['date']}
+📋 Чат ID: {report['chat_id']}
+
+📈 **СТАТИСТИКА:**
+• Всего сообщений: {report['total_messages']}
+• Активных пользователей: {report['active_users']}
+• Упоминаний: {report['total_mentions']}
+• Среднее время ответа: {report['avg_response_time']:.1f} мин
+
+👥 **ТОП АКТИВНЫХ ПОЛЬЗОВАТЕЛЕЙ:**
+"""
+            
+            for i, user in enumerate(report['top_users'][:3], 1):
+                name = user.get('name', f"Пользователь {user['user_id']}")
+                report_text += f"{i}. {name}: {user['messages_count']} сообщений\n"
+            
+            report_text += "\n🎯 **ПОПУЛЯРНЫЕ ТЕМЫ:**\n"
+            for topic, count in report['popular_topics'][:3]:
+                report_text += f"• {topic}: {count} упоминаний\n"
+            
+            if report['task_stats']:
+                task_stats = report['task_stats']
+                report_text += f"\n✅ **ЗАДАЧИ:**\n"
+                report_text += f"• Всего: {task_stats.get('total_tasks', 0)}\n"
+                report_text += f"• Выполнено: {task_stats.get('status_stats', {}).get('completed', 0)}\n"
+                report_text += f"• В работе: {task_stats.get('status_stats', {}).get('pending', 0)}\n"
+            
+            await update.message.reply_text(report_text, parse_mode='Markdown')
+            
+        except Exception as e:
+            await update.message.reply_text(f"❌ Ошибка при генерации отчета: {e}")
+    
+    async def setup_monitoring(self, update: Update, context):
+        """Настраивает мониторинг чатов"""
+        user_id = update.effective_user.id
+        
+        if user_id not in ADMIN_USER_IDS:
+            await update.message.reply_text("❌ У вас нет прав администратора")
+            return
+        
+        # Получаем список чатов для мониторинга
+        if not context.args:
+            await update.message.reply_text("❌ Укажите ID чатов для мониторинга. Используйте: /setup_monitoring <chat_id1> <chat_id2> ...")
+            return
+        
+        chat_ids = []
+        for arg in context.args:
+            try:
+                chat_ids.append(int(arg))
+            except ValueError:
+                await update.message.reply_text(f"❌ Неверный формат ID чата: {arg}")
+                return
+        
+        await update.message.reply_text(f"📅 Настраиваем мониторинг для {len(chat_ids)} чатов...")
+        
+        try:
+            await self.message_collector.schedule_daily_collection(chat_ids)
+            await update.message.reply_text(f"✅ Мониторинг настроен для чатов: {', '.join(map(str, chat_ids))}")
+        except Exception as e:
+            await update.message.reply_text(f"❌ Ошибка при настройке мониторинга: {e}")
     
     async def error_handler(self, update: Update, context):
         """Обработчик ошибок"""
