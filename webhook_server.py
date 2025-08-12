@@ -689,10 +689,20 @@ class CloudChatAnalyzerBot:
     async def show_groups(self, update: Update, context):
         """Показывает список групп, которые мониторит бот"""
         user_id = update.effective_user.id
+        chat_id = update.effective_chat.id
         
         # Проверяем права администратора
         if user_id not in ADMIN_USER_IDS:
             await update.message.reply_text(f"❌ У вас нет прав администратора\nВаш ID: {user_id}\nАдминистраторы: {ADMIN_USER_IDS}")
+            return
+        
+        # Проверяем, что это личные сообщения
+        if chat_id > 0:
+            # Это личные сообщения - можно показывать группы
+            pass
+        else:
+            # Это группа - отправляем сообщение о том, что нужно использовать личные сообщения
+            await update.message.reply_text("💡 Для просмотра списка групп используйте личные сообщения с ботом")
             return
         
         # Получаем список групп из базы данных
@@ -1018,6 +1028,11 @@ class CloudChatAnalyzerBot:
         """Проверяет статус пользователя и бота"""
         user = update.effective_user
         chat_id = update.effective_chat.id
+        
+        # Проверяем, что это личные сообщения
+        if chat_id <= 0:
+            await update.message.reply_text("💡 Для проверки статуса используйте личные сообщения с ботом")
+            return
         
         # Информация о пользователе
         user_info = f"""
@@ -1505,7 +1520,7 @@ def webhook():
             import asyncio
             import threading
             
-            # Создаем новый event loop для каждого webhook
+            # Обрабатываем webhook синхронно для избежания проблем с event loop
             def process_webhook():
                 try:
                     # Создаем новый event loop
@@ -1515,10 +1530,6 @@ def webhook():
                     # Обрабатываем webhook
                     loop.run_until_complete(bot.handle_webhook(update_dict))
                     
-                    # Закрываем loop только если он не закрыт
-                    if not loop.is_closed():
-                        loop.close()
-                        
                 except Exception as e:
                     logger.error(f"Ошибка в process_webhook: {e}")
                 finally:
@@ -1533,7 +1544,7 @@ def webhook():
             thread = threading.Thread(target=process_webhook)
             thread.daemon = True  # Делаем поток демоном
             thread.start()
-            thread.join(timeout=10)  # Ждем максимум 10 секунд
+            # Не ждем завершения потока, чтобы избежать блокировки
             
             logger.info(f"Webhook {update_id} успешно обработан")
         except Exception as e:
