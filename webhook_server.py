@@ -82,6 +82,8 @@ class CloudChatAnalyzerBot:
         self.application.add_handler(CommandHandler("group_activity", self.group_activity))
         self.application.add_handler(CommandHandler("group_mentions", self.group_mentions))
         self.application.add_handler(CommandHandler("temperature", self.analyze_temperature))
+        self.application.add_handler(CommandHandler("status", self.check_status))
+        self.application.add_handler(CommandHandler("debug_groups", self.debug_groups))
         
         # Обработчик сообщений
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
@@ -687,8 +689,9 @@ class CloudChatAnalyzerBot:
         """Показывает список групп, которые мониторит бот"""
         user_id = update.effective_user.id
         
+        # Проверяем права администратора
         if user_id not in ADMIN_USER_IDS:
-            await update.message.reply_text("❌ У вас нет прав администратора")
+            await update.message.reply_text(f"❌ У вас нет прав администратора\nВаш ID: {user_id}\nАдминистраторы: {ADMIN_USER_IDS}")
             return
         
         # Получаем список групп из базы данных
@@ -996,6 +999,77 @@ class CloudChatAnalyzerBot:
             recommendations.append("• ✅ Температура в норме - продолжайте в том же духе")
         
         return "\n".join(recommendations)
+
+    async def check_status(self, update: Update, context):
+        """Проверяет статус пользователя и бота"""
+        user = update.effective_user
+        chat_id = update.effective_chat.id
+        
+        # Информация о пользователе
+        user_info = f"""
+🔍 **СТАТУС БОТА И ПОЛЬЗОВАТЕЛЯ**
+
+👤 **Информация о вас:**
+• ID: `{user.id}`
+• Имя: {user.first_name}
+• Фамилия: {user.last_name or 'Не указана'}
+• Username: @{user.username or 'Не указан'}
+
+🔧 **Права администратора:** {'✅ Да' if user.id in ADMIN_USER_IDS else '❌ Нет'}
+
+📋 **Текущие администраторы:** {ADMIN_USER_IDS}
+
+🌐 **Тип чата:** {'Личные сообщения' if chat_id > 0 else 'Группа'}
+
+💾 **База данных:** {'✅ Доступна' if self.db else '❌ Недоступна'}
+
+🤖 **Статус бота:** ✅ Работает
+
+💡 **Доступные команды:**
+• `/myid` - ваш ID и права
+• `/groups` - список групп (только админ)
+• `/temperature <ID группы>` - анализ температуры (только админ)
+• `/help` - справка
+"""
+        
+        await update.message.reply_text(user_info, parse_mode='Markdown')
+
+    async def debug_groups(self, update: Update, context):
+        """Отладочная команда для просмотра групп (без проверки прав)"""
+        user = update.effective_user
+        
+        try:
+            # Получаем список групп из базы данных
+            groups = self.db.get_monitored_groups()
+            
+            if not groups:
+                await update.message.reply_text("📋 Пока нет данных о группах в базе данных.")
+                return
+            
+            groups_info = f"🔍 **ОТЛАДКА: ГРУППЫ В БАЗЕ ДАННЫХ**\n\n"
+            groups_info += f"👤 **Запросил:** {user.first_name} (ID: {user.id})\n\n"
+            
+            for i, group in enumerate(groups, 1):
+                group_id = group['chat_id']
+                group_title = group.get('title', f'Группа {group_id}')
+                messages_count = group.get('messages_count', 0)
+                users_count = group.get('users_count', 0)
+                last_activity = group.get('last_activity', 'Неизвестно')
+                
+                groups_info += f"{i}. **{group_title}**\n"
+                groups_info += f"   🆔 ID: `{group_id}`\n"
+                groups_info += f"   💬 Сообщений: {messages_count}\n"
+                groups_info += f"   👥 Пользователей: {users_count}\n"
+                groups_info += f"   ⏰ Последняя активность: {last_activity}\n\n"
+            
+            groups_info += "💡 **Для анализа используйте:**\n"
+            groups_info += f"• `/temperature {groups[0]['chat_id']}` - анализ температуры\n"
+            groups_info += f"• `/group_report {groups[0]['chat_id']}` - отчет по группе\n"
+            
+            await update.message.reply_text(groups_info, parse_mode='Markdown')
+            
+        except Exception as e:
+            await update.message.reply_text(f"❌ Ошибка при получении групп: {str(e)}")
 
 # Создаем экземпляр бота
 try:
