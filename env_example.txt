@@ -1,0 +1,13 @@
+# Токен вашего Telegram бота (получите у @BotFather)
+BOT_TOKEN=your_bot_token_here
+
+# ID администраторов (через запятую)
+ADMIN_USER_IDS=123456789,987654321
+
+# Настройки базы данных
+DATABASE_PATH=chat_analyzer.db
+
+# Настройки анализа
+HISTORY_DAYS=45
+REPORT_TIME=18:00
+TASK_TIMEOUT_HOURS=24
