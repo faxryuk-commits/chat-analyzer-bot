@@ -179,39 +179,10 @@ class TelegramHistoryCollector:
             # Получаем информацию о чате
             chat = await self.bot.get_chat(chat_id)
             
-            # Получаем последние сообщения
-            messages = []
-            offset_id = 0
-            
-            while len(messages) < limit:
-                try:
-                    # Получаем сообщения по частям
-                    updates = await self.bot.get_updates(
-                        offset=offset_id,
-                        limit=100,
-                        timeout=10
-                    )
-                    
-                    if not updates:
-                        break
-                    
-                    for update in updates:
-                        if update.message and update.message.chat.id == chat_id:
-                            messages.append(update.message)
-                            
-                            if len(messages) >= limit:
-                                break
-                    
-                    if updates:
-                        offset_id = updates[-1].update_id + 1
-                    else:
-                        break
-                        
-                except Exception as e:
-                    logger.error(f"Ошибка при получении обновлений: {e}")
-                    break
-            
-            return messages
+            # При активном webhook нельзя использовать getUpdates
+            # Поэтому возвращаем пустой список - сообщения будут приходить через webhook
+            logger.info(f"Webhook активен, пропускаем getUpdates для чата {chat_id}")
+            return []
             
         except Exception as e:
             logger.error(f"Ошибка при получении сообщений из чата {chat_id}: {e}")
