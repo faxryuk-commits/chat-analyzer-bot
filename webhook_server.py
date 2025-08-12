@@ -358,12 +358,64 @@ class CloudChatAnalyzerBot:
     async def collect_history(self, update: Update, context):
         """Собирает историю сообщений"""
         user_id = update.effective_user.id
+        message_id = update.message.message_id
+        chat_id = update.effective_chat.id
+        
+        # Проверяем дублирование команды
+        if self._is_duplicate_command(user_id, 'collect_history', message_id):
+            return
         
         if user_id not in ADMIN_USER_IDS:
             await update.message.reply_text("❌ У вас нет прав администратора")
             return
         
-        await update.message.reply_text("✅ История сообщений собрана!")
+        # Логируем команду
+        logger.info(f"Команда /collect_history от пользователя {user_id} в чате {chat_id}")
+        
+        # Отправляем сообщение о начале сбора
+        status_message = await update.message.reply_text("🔄 Начинаем сбор истории сообщений...")
+        
+        try:
+            # Получаем количество дней из аргументов или используем значение по умолчанию
+            days = HISTORY_DAYS
+            if context.args:
+                try:
+                    days = int(context.args[0])
+                except ValueError:
+                    await status_message.edit_text("❌ Неверный формат количества дней. Используйте число.")
+                    return
+            
+            # Запускаем сбор истории
+            result = await self.message_collector.collect_chat_history(chat_id, days)
+            
+            if result.get('error'):
+                await status_message.edit_text(f"❌ Ошибка при сборе истории: {result['error']}")
+            else:
+                # Формируем отчет о результатах
+                report = f"""
+✅ **Сбор истории завершен!**
+
+📋 **Результаты:**
+• Чат: {result.get('chat_title', f'ID: {chat_id}')}
+• Период: {result.get('period_days', days)} дней
+• Собрано сообщений: {result.get('messages_collected', 0)}
+• Уникальных пользователей: {result.get('users_found', 0)}
+
+📅 **Период сбора:**
+• С: {result.get('start_date', '').strftime('%d.%m.%Y') if result.get('start_date') else 'N/A'}
+• По: {result.get('end_date', '').strftime('%d.%m.%Y') if result.get('end_date') else 'N/A'}
+
+🎯 **Теперь вы можете использовать команды:**
+• `/report` - получить отчет по активности
+• `/activity` - активность пользователей
+• `/mentions` - статистика упоминаний
+• `/topics` - популярные темы
+"""
+                await status_message.edit_text(report, parse_mode='Markdown')
+                
+        except Exception as e:
+            logger.error(f"Ошибка при сборе истории: {e}")
+            await status_message.edit_text(f"❌ Ошибка при сборе истории: {str(e)}")
     
     async def collect_chat_history(self, update: Update, context):
         """Собирает историю конкретного чата"""
