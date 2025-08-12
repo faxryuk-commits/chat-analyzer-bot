@@ -997,14 +997,24 @@ class CloudChatAnalyzerBot:
         return "\n".join(recommendations)
 
 # Создаем экземпляр бота
-bot = CloudChatAnalyzerBot()
+try:
+    bot = CloudChatAnalyzerBot()
+    logger.info("Бот успешно инициализирован")
+except Exception as e:
+    logger.error(f"Ошибка при инициализации бота: {e}")
+    bot = None
 
 @app.route('/health')
 def health_check():
     """Health check для Railway"""
     try:
-        # Простая проверка - бот отвечает
-        return jsonify({"status": "healthy", "bot": "running", "timestamp": datetime.now().isoformat()})
+        bot_status = "running" if bot else "initializing"
+        return jsonify({
+            "status": "healthy", 
+            "bot": bot_status, 
+            "timestamp": datetime.now().isoformat(),
+            "port": os.environ.get('PORT', '5000')
+        })
     except Exception as e:
         logger.error(f"Health check error: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -1013,6 +1023,11 @@ def health_check():
 def webhook():
     """Обработчик webhook от Telegram"""
     if request.method == 'POST':
+        # Проверяем, инициализирован ли бот
+        if bot is None:
+            logger.error("Бот не инициализирован")
+            return jsonify({"status": "error", "message": "Bot not initialized"}), 500
+        
         update_dict = request.get_json()
         
         # Логируем входящий webhook
@@ -1060,30 +1075,44 @@ def webhook():
 def home():
     """Главная страница"""
     try:
-        return """
+        bot_status = "✅ Работает" if bot else "⏳ Инициализация"
+        return f"""
         <h1>🤖 Chat Analyzer Bot</h1>
         <p>Бот для анализа активности в рабочих чатах</p>
-        <p>Статус: <strong>Работает</strong></p>
+        <p>Статус: <strong>{bot_status}</strong></p>
         <p>Версия: 1.0.0</p>
-        <p>Время: """ + datetime.now().strftime('%Y-%m-%d %H:%M:%S') + """</p>
+        <p>Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+        <p>Порт: {os.environ.get('PORT', '5000')}</p>
+        <p><a href="/health">Health Check</a></p>
         """
     except Exception as e:
         return f"<h1>🤖 Chat Analyzer Bot</h1><p>Ошибка: {str(e)}</p>"
+
+@app.route('/ping')
+def ping():
+    """Простой ping для проверки"""
+    return jsonify({"pong": True, "timestamp": datetime.now().isoformat()})
 
 if __name__ == '__main__':
     # Получаем порт из переменной окружения
     port = int(os.environ.get('PORT', 5000))
     
-    # Настраиваем webhook для Telegram
-    webhook_url = os.environ.get('WEBHOOK_URL')
-    if webhook_url:
-        # Устанавливаем webhook
-        import asyncio
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(bot.application.bot.set_webhook(url=f"{webhook_url}/webhook"))
-        loop.close()
-        logger.info(f"Webhook установлен: {webhook_url}/webhook")
+    logger.info(f"Запуск Flask приложения на порту {port}")
     
-    # Запускаем Flask приложение
-    app.run(host='0.0.0.0', port=port, debug=False)
+    try:
+        # Настраиваем webhook для Telegram
+        webhook_url = os.environ.get('WEBHOOK_URL')
+        if webhook_url:
+            # Устанавливаем webhook
+            import asyncio
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(bot.application.bot.set_webhook(url=f"{webhook_url}/webhook"))
+            loop.close()
+            logger.info(f"Webhook установлен: {webhook_url}/webhook")
+        
+        # Запускаем Flask приложение
+        app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
+    except Exception as e:
+        logger.error(f"Ошибка при запуске приложения: {e}")
+        raise
