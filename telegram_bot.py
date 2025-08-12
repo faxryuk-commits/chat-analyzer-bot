@@ -166,6 +166,7 @@ class ChatAnalyzerBot:
         if message.reply_to_message:
             # Проверяем, есть ли задача для этого сообщения
             # TODO: реализовать логику проверки и обновления задач
+            pass
     
     async def generate_report(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Генерирует отчет по активности"""
