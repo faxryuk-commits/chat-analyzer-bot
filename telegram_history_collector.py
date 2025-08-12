@@ -21,28 +21,33 @@ class TelegramHistoryCollector:
         self.text_analyzer = text_analyzer
         self.bot = Bot(token=bot_token)
         
-    async def collect_real_chat_history(self, chat_id: int, days: int = 45) -> Dict:
-        """Собирает реальную историю сообщений из чата"""
-        
-        print(f"📥 Начинаем сбор истории для чата {chat_id} за последние {days} дней...")
+        async def collect_real_chat_history(self, chat_id: int, days: int = 45, progress_callback=None) -> Dict:
+        """Собирает реальную историю сообщений из чата с прогрессом"""
         
         # Вычисляем дату начала сбора
         start_date = datetime.now() - timedelta(days=days)
         
         try:
-            # Получаем информацию о чате
+            # Шаг 1: Получение информации о чате
+            if progress_callback:
+                await progress_callback("🔍 Получаем информацию о чате...")
+            
             chat_info = await self.bot.get_chat(chat_id)
             chat_title = chat_info.title if hasattr(chat_info, 'title') else f"Чат {chat_id}"
             
-            print(f"📋 Чат: {chat_title}")
-            print(f"📅 Период: с {start_date.strftime('%d.%m.%Y')} по {datetime.now().strftime('%d.%m.%Y')}")
+            if progress_callback:
+                await progress_callback(f"📋 Чат: {chat_title}\n📅 Период: {start_date.strftime('%d.%m.%Y')} - {datetime.now().strftime('%d.%m.%Y')}")
             
-            # Проверяем существующие данные в базе
+            # Шаг 2: Проверка существующих данных
+            if progress_callback:
+                await progress_callback("🔍 Проверяем существующие данные в базе...")
+            
             existing_messages = self.db.get_messages_for_period(chat_id, days)
             existing_count = len(existing_messages)
             
             if existing_count > 0:
-                print(f"📊 Найдено {existing_count} существующих сообщений в базе данных")
+                if progress_callback:
+                    await progress_callback(f"📊 Найдено {existing_count} существующих сообщений")
                 
                 # Анализируем существующие сообщения
                 users_found = set()
@@ -50,10 +55,14 @@ class TelegramHistoryCollector:
                     if message.get('user_id'):
                         users_found.add(message['user_id'])
                 
-                print(f"👥 Найдено {len(users_found)} уникальных пользователей в базе данных")
+                if progress_callback:
+                    await progress_callback(f"👥 Найдено {len(users_found)} уникальных пользователей")
                 
                 # Если данных достаточно, возвращаем статистику
-                if existing_count >= 5:  # Минимум 5 сообщений для демонстрации
+                if existing_count >= 5:
+                    if progress_callback:
+                        await progress_callback("✅ Используем существующие данные из базы")
+                    
                     return {
                         'chat_id': chat_id,
                         'chat_title': chat_title,
@@ -62,23 +71,30 @@ class TelegramHistoryCollector:
                         'period_days': days,
                         'start_date': start_date,
                         'end_date': datetime.now(),
-                        'source': 'database'
+                        'source': 'database',
+                        'steps_completed': ['chat_info', 'database_check', 'existing_data_analysis']
                     }
             
-            # Если данных нет, создаем тестовые данные для демонстрации
-            print("📝 Создаем тестовые данные для демонстрации...")
-            test_data = self._create_demo_data(chat_id, chat_title, days)
+            # Шаг 3: Создание демо-данных
+            if progress_callback:
+                await progress_callback("📝 Создаем демонстрационные данные...")
             
-                    return {
-            'chat_id': chat_id,
-            'chat_title': chat_title,
-            'messages_collected': test_data['messages_count'],
-            'users_found': test_data['users_count'],
-            'period_days': days,
-            'start_date': start_date,
-            'end_date': datetime.now(),
-            'source': 'demo_data'
-        }
+            test_data = await self._create_demo_data_with_progress(chat_id, chat_title, days, progress_callback)
+            
+            if progress_callback:
+                await progress_callback("✅ Демо-данные успешно созданы!")
+            
+            return {
+                'chat_id': chat_id,
+                'chat_title': chat_title,
+                'messages_collected': test_data['messages_count'],
+                'users_found': test_data['users_count'],
+                'period_days': days,
+                'start_date': start_date,
+                'end_date': datetime.now(),
+                'source': 'demo_data',
+                'steps_completed': ['chat_info', 'database_check', 'demo_data_creation']
+            }
         
     def _create_demo_data(self, chat_id: int, chat_title: str, days: int) -> Dict:
         """Создает демонстрационные данные для показа возможностей бота"""
@@ -158,6 +174,107 @@ class TelegramHistoryCollector:
         self.db.save_chat_info(chat_info)
         
         print(f"✅ Создано {messages_count} демо-сообщений от {users_count} пользователей")
+        
+        return {
+            'messages_count': messages_count,
+            'users_count': users_count
+        }
+        
+    async def _create_demo_data_with_progress(self, chat_id: int, chat_title: str, days: int, progress_callback=None) -> Dict:
+        """Создает демонстрационные данные с отображением прогресса"""
+        
+        if progress_callback:
+            await progress_callback("👥 Создаем тестовых пользователей...")
+        
+        # Создаем тестовых пользователей
+        demo_users = [
+            {'id': 123456789, 'name': 'Иван Петров', 'username': 'ivan_petrov'},
+            {'id': 987654321, 'name': 'Мария Сидорова', 'username': 'maria_sidorova'},
+            {'id': 555666777, 'name': 'Алексей Козлов', 'username': 'alex_kozlov'},
+            {'id': 111222333, 'name': 'Елена Воробьева', 'username': 'elena_vorobyeva'},
+            {'id': 444555666, 'name': 'Дмитрий Новиков', 'username': 'dmitry_novikov'}
+        ]
+        
+        if progress_callback:
+            await progress_callback(f"✅ Создано {len(demo_users)} пользователей")
+        
+        # Создаем тестовые сообщения
+        demo_messages = [
+            "Привет всем! Как дела с проектом?",
+            "Отлично! Презентация готова на 80%",
+            "Спасибо за работу, команда!",
+            "Когда будет готов финальный вариант?",
+            "К завтрашнему дню точно сдам",
+            "Отлично! Ждем результат",
+            "Есть вопросы по дизайну",
+            "Давайте обсудим завтра на встрече",
+            "Согласен, нужно уточнить детали",
+            "Встреча в 15:00, все согласны?",
+            "Да, подходит!",
+            "Отлично, тогда до встречи",
+            "Не забудьте подготовить материалы",
+            "Конечно, все готово",
+            "Спасибо за напоминание!"
+        ]
+        
+        if progress_callback:
+            await progress_callback(f"💬 Подготавливаем {len(demo_messages)} сообщений...")
+        
+        messages_count = 0
+        users_count = len(demo_users)
+        
+        # Сохраняем демо-данные в базу с прогрессом
+        for i, message_text in enumerate(demo_messages):
+            user = demo_users[i % len(demo_users)]
+            
+            # Создаем timestamp для последних дней
+            message_date = datetime.now() - timedelta(days=days-1, hours=i)
+            
+            message_data = {
+                'message_id': 1000000 + i,  # Уникальный ID
+                'chat_id': chat_id,
+                'user_id': user['id'],
+                'username': user['username'],
+                'first_name': user['name'].split()[0],
+                'last_name': user['name'].split()[1] if len(user['name'].split()) > 1 else None,
+                'display_name': user['name'],
+                'text': message_text,
+                'date': int(message_date.timestamp()),
+                'reply_to_message_id': None,
+                'forward_from_user_id': None,
+                'is_edited': False,
+                'edit_date': None
+            }
+            
+            # Сохраняем сообщение
+            self.db.save_message(message_data)
+            messages_count += 1
+            
+            # Обновляем активность пользователя
+            self.db.update_user_activity(user['id'], chat_id, message_date, user['name'])
+            
+            # Показываем прогресс каждые 5 сообщений
+            if progress_callback and (i + 1) % 5 == 0:
+                await progress_callback(f"💾 Сохранено {i + 1}/{len(demo_messages)} сообщений...")
+        
+        if progress_callback:
+            await progress_callback("💾 Сохраняем информацию о чате...")
+        
+        # Сохраняем информацию о чате
+        chat_info = {
+            'chat_id': chat_id,
+            'chat_type': 'supergroup',
+            'title': chat_title,
+            'username': None,
+            'first_name': None,
+            'last_name': None,
+            'description': 'Демонстрационная группа для тестирования бота',
+            'member_count': users_count
+        }
+        self.db.save_chat_info(chat_info)
+        
+        if progress_callback:
+            await progress_callback(f"✅ Создано {messages_count} сообщений от {users_count} пользователей")
         
         return {
             'messages_count': messages_count,

@@ -468,19 +468,29 @@ class CloudChatAnalyzerBot:
                     await status_message.edit_text("❌ Неверный формат количества дней. Используйте число.")
                     return
             
-            # Запускаем сбор истории
-            result = await self.message_collector.collect_chat_history(chat_id, days)
+            # Функция для обновления прогресса
+            async def update_progress(message):
+                await status_message.edit_text(f"🔄 **Сбор истории...**\n\n{message}")
+            
+            # Запускаем сбор истории с прогрессом
+            result = await self.message_collector.collect_chat_history(chat_id, days, update_progress)
             
             if result.get('error'):
                 await status_message.edit_text(f"❌ Ошибка при сборе истории: {result['error']}")
             else:
-                # Формируем отчет о результатах
+                # Формируем подробный отчет о результатах
                 source_info = ""
                 if result.get('source') == 'database':
                     source_info = " (из базы данных)"
+                elif result.get('source') == 'demo_data':
+                    source_info = " (демо-данные)"
+                
+                # Определяем статус выполнения
+                steps_completed = result.get('steps_completed', [])
+                status_emoji = "✅" if len(steps_completed) > 0 else "⚠️"
                 
                 report = f"""
-✅ **Сбор истории завершен!**
+{status_emoji} **Сбор истории завершен!**
 
 📋 **Результаты:**
 • Чат: {result.get('chat_title', f'ID: {chat_id}')}
@@ -493,13 +503,34 @@ class CloudChatAnalyzerBot:
 • По: {result.get('end_date', '').strftime('%d.%m.%Y') if result.get('end_date') else 'N/A'}
 
 💾 **Источник данных:**
-• База данных: {result.get('source', 'новые сообщения')}
+• {result.get('source', 'новые сообщения')}
 
-🎯 **Теперь вы можете использовать команды:**
+🔧 **Выполненные шаги:**
+"""
+                
+                # Добавляем выполненные шаги
+                step_descriptions = {
+                    'chat_info': '• ✅ Получена информация о чате',
+                    'database_check': '• ✅ Проверена база данных',
+                    'existing_data_analysis': '• ✅ Проанализированы существующие данные',
+                    'demo_data_creation': '• ✅ Созданы демонстрационные данные'
+                }
+                
+                for step in steps_completed:
+                    if step in step_descriptions:
+                        report += step_descriptions[step] + "\n"
+                
+                report += f"""
+💡 **Теперь вы можете использовать команды:**
 • `/report` - получить отчет по активности
 • `/activity` - активность пользователей
 • `/mentions` - статистика упоминаний
 • `/topics` - популярные темы
+• `/wordcloud` - облако слов
+
+🚀 **Для AI-анализа используйте личные сообщения:**
+• `/groups` - выбрать группу для анализа
+• `/temperature` - AI-анализ температуры беседы
 """
                 await status_message.edit_text(report, parse_mode='Markdown')
                 

@@ -21,14 +21,14 @@ class MessageCollector:
         self.text_analyzer = text_analyzer
         self.bot = Bot(token=bot_token)
         
-    async def collect_chat_history(self, chat_id: int, days: int = 45) -> Dict:
+    async def collect_chat_history(self, chat_id: int, days: int = 45, progress_callback=None) -> Dict:
         """Собирает историю сообщений из чата за указанное количество дней"""
         
         # Используем новый модуль для сбора реальной истории
         from telegram_history_collector import TelegramHistoryCollector
         
         collector = TelegramHistoryCollector(self.bot_token, self.db, self.text_analyzer)
-        return await collector.collect_real_chat_history(chat_id, days)
+        return await collector.collect_real_chat_history(chat_id, days, progress_callback)
     
     async def collect_all_chats_history(self, chat_ids: List[int], days: int = 45) -> List[Dict]:
         """Собирает историю из всех указанных чатов"""
