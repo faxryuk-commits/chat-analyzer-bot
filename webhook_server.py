@@ -9,7 +9,7 @@ import time
 from datetime import datetime
 from typing import Dict
 from flask import Flask, request, jsonify
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 import threading
 
@@ -84,6 +84,7 @@ class CloudChatAnalyzerBot:
         self.application.add_handler(CommandHandler("temperature", self.analyze_temperature))
         self.application.add_handler(CommandHandler("status", self.check_status))
         self.application.add_handler(CommandHandler("debug_groups", self.debug_groups))
+        self.application.add_handler(CallbackQueryHandler(self.button_callback))
         
         # Обработчик сообщений
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
@@ -721,12 +722,25 @@ class CloudChatAnalyzerBot:
                 groups_info += f"   👤 Всего участников: {member_count}\n"
             groups_info += f"   ⏰ Последняя активность: {last_activity}\n\n"
         
-        groups_info += "💡 **Команды для работы с группами:**\n"
-        groups_info += "• `/group_report <ID группы>` - отчет по группе\n"
-        groups_info += "• `/group_activity <ID группы>` - активность пользователей\n"
-        groups_info += "• `/group_mentions <ID группы>` - статистика упоминаний\n"
+        groups_info += "💡 **Выберите группу для анализа:**\n"
         
-        await update.message.reply_text(groups_info, parse_mode='Markdown')
+        # Создаем кнопки для каждой группы
+        keyboard = []
+        for group in groups:
+            group_id = group['chat_id']
+            group_title = group.get('title', f'Группа {group_id}')
+            # Ограничиваем длину названия для кнопки
+            button_text = group_title[:30] + "..." if len(group_title) > 30 else group_title
+            keyboard.append([InlineKeyboardButton(button_text, callback_data=f"group_{group_id}")])
+        
+        # Добавляем кнопки для общих действий
+        keyboard.append([
+            InlineKeyboardButton("📊 Все отчеты", callback_data="all_reports"),
+            InlineKeyboardButton("🌡️ Температура всех", callback_data="all_temperature")
+        ])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(groups_info, parse_mode='Markdown', reply_markup=reply_markup)
     
     async def group_report(self, update: Update, context):
         """Генерирует отчет по конкретной группе"""
@@ -1070,6 +1084,375 @@ class CloudChatAnalyzerBot:
             
         except Exception as e:
             await update.message.reply_text(f"❌ Ошибка при получении групп: {str(e)}")
+
+    async def button_callback(self, update: Update, context):
+        """Обработчик нажатий на кнопки"""
+        query = update.callback_query
+        await query.answer()  # Убираем "часики" у кнопки
+        
+        user_id = query.from_user.id
+        
+        # Проверяем права администратора
+        if user_id not in ADMIN_USER_IDS:
+            await query.edit_message_text("❌ У вас нет прав администратора")
+            return
+        
+        callback_data = query.data
+        
+        if callback_data.startswith("group_"):
+            # Выбрана конкретная группа
+            chat_id = int(callback_data.split("_")[1])
+            await self.show_group_menu(query, chat_id)
+        
+        elif callback_data == "all_reports":
+            # Показать отчеты по всем группам
+            await self.show_all_reports(query)
+        
+        elif callback_data == "all_temperature":
+            # Показать температуру всех групп
+            await self.show_all_temperature(query)
+        
+        elif callback_data == "back_to_groups":
+            # Вернуться к списку групп
+            await self.show_groups_from_callback(query)
+        
+        elif callback_data.startswith("action_"):
+            # Действие с группой
+            parts = callback_data.split("_")
+            action = parts[1]
+            chat_id = int(parts[2])
+            
+            if action == "report":
+                await self.show_group_report(query, chat_id)
+            elif action == "activity":
+                await self.show_group_activity(query, chat_id)
+            elif action == "mentions":
+                await self.show_group_mentions(query, chat_id)
+            elif action == "temperature":
+                await self.show_group_temperature(query, chat_id)
+            elif action == "back":
+                await self.show_group_menu(query, chat_id)
+
+    async def show_group_menu(self, query, chat_id: int):
+        """Показывает меню действий для конкретной группы"""
+        # Получаем информацию о группе
+        chat_info = self.db.get_chat_info(chat_id)
+        group_title = chat_info.get('title', f'Группа {chat_id}') if chat_info else f'Группа {chat_id}'
+        
+        # Получаем базовую статистику
+        messages = self.db.get_messages_for_period(chat_id, 7)
+        user_stats = self.db.get_user_activity_stats(chat_id, 7)
+        
+        menu_text = f"""
+📋 **МЕНЮ ГРУППЫ**
+
+🏷️ **Название:** {group_title}
+🆔 **ID:** `{chat_id}`
+
+📊 **Статистика за неделю:**
+• 💬 Сообщений: {len(messages)}
+• 👥 Активных пользователей: {len(user_stats)}
+
+💡 **Выберите действие:**
+        """
+        
+        keyboard = [
+            [
+                InlineKeyboardButton("📊 Отчет", callback_data=f"action_report_{chat_id}"),
+                InlineKeyboardButton("👥 Активность", callback_data=f"action_activity_{chat_id}")
+            ],
+            [
+                InlineKeyboardButton("🌡️ Температура", callback_data=f"action_temperature_{chat_id}"),
+                InlineKeyboardButton("📢 Упоминания", callback_data=f"action_mentions_{chat_id}")
+            ],
+            [
+                InlineKeyboardButton("🔙 Назад к группам", callback_data="back_to_groups")
+            ]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(menu_text, parse_mode='Markdown', reply_markup=reply_markup)
+
+    async def show_group_report(self, query, chat_id: int):
+        """Показывает отчет по группе"""
+        try:
+            # Получаем данные группы
+            messages = self.db.get_messages_for_period(chat_id, 7)
+            user_stats = self.db.get_user_activity_stats(chat_id, 7)
+            mention_stats = self.db.get_mention_stats(chat_id, 7)
+            task_stats = self.db.get_task_stats(chat_id, 7)
+            
+            if not messages:
+                await query.edit_message_text("❌ Нет данных для отчета")
+                return
+            
+            # Анализируем данные
+            texts = [msg['text'] for msg in messages if msg['text']]
+            topic_distribution = self.text_analyzer.get_topic_distribution(texts)
+            hourly_activity = timezone_manager.get_activity_hours(messages, 'Europe/Moscow')
+            
+            chat_data = {
+                'total_messages': len(messages),
+                'active_users': len(user_stats),
+                'total_mentions': sum(m['mention_count'] for m in mention_stats),
+                'top_users': user_stats[:5],
+                'popular_topics': sorted(topic_distribution.items(), key=lambda x: x[1], reverse=True)[:5],
+                'task_stats': task_stats,
+                'hourly_activity': hourly_activity
+            }
+            
+            report = self.report_generator.generate_daily_report(chat_data)
+            
+            # Получаем информацию о группе
+            chat_info = self.db.get_chat_info(chat_id)
+            group_title = chat_info.get('title', f'Группа {chat_id}') if chat_info else f'Группа {chat_id}'
+            
+            full_report = f"📊 **ОТЧЕТ ПО ГРУППЕ**\n📋 **{group_title}**\n🆔 ID: `{chat_id}`\n📅 Период: последние 7 дней\n\n{report}"
+            
+            keyboard = [[InlineKeyboardButton("🔙 Назад к меню", callback_data=f"action_back_{chat_id}")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await query.edit_message_text(full_report, parse_mode='Markdown', reply_markup=reply_markup)
+            
+        except Exception as e:
+            await query.edit_message_text(f"❌ Ошибка при генерации отчета: {str(e)}")
+
+    async def show_group_temperature(self, query, chat_id: int):
+        """Показывает анализ температуры группы"""
+        try:
+            # Получаем сообщения для анализа
+            messages = self.db.get_messages_for_period(chat_id, 7)
+            
+            if not messages:
+                await query.edit_message_text("❌ Нет данных для анализа температуры")
+                return
+            
+            # Анализируем температуру
+            analysis = self.conversation_analyzer.analyze_conversation_temperature(messages, 7)
+            
+            # Получаем информацию о группе
+            chat_info = self.db.get_chat_info(chat_id)
+            group_title = chat_info.get('title', f'Группа {chat_id}') if chat_info else f'Группа {chat_id}'
+            
+            temperature_emoji = self.conversation_analyzer.get_temperature_emoji(analysis['temperature'])
+            
+            report = f"""
+🌡️ **АНАЛИЗ ТЕМПЕРАТУРЫ БЕСЕДЫ**
+
+📋 **Группа:** {group_title}
+🆔 **ID:** `{chat_id}`
+📅 **Период:** последние 7 дней
+
+{temperature_emoji} **Температура:** **{analysis['temperature']}/10**
+📊 **Уверенность:** {analysis['confidence'] * 100:.0f}%
+
+📝 **Описание:**
+{analysis['description']}
+
+📈 **Детали анализа:**
+• 💬 Всего сообщений: {analysis['details']['total_messages']}
+• 😊 Позитивных: {analysis['details']['emotion_distribution']['positive']}
+• 😔 Негативных: {analysis['details']['emotion_distribution']['negative']}
+• 😐 Нейтральных: {analysis['details']['emotion_distribution']['neutral']}
+• ⚡ Срочных: {analysis['details']['urgency_messages']}
+• ❓ Вопросов: {analysis['details']['question_messages']}
+• ✅ Решений: {analysis['details']['resolution_messages']}
+
+💡 **Рекомендации:**
+{self._get_temperature_recommendations(analysis)}
+"""
+            
+            keyboard = [[InlineKeyboardButton("🔙 Назад к меню", callback_data=f"action_back_{chat_id}")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await query.edit_message_text(report, parse_mode='Markdown', reply_markup=reply_markup)
+            
+        except Exception as e:
+            await query.edit_message_text(f"❌ Ошибка при анализе температуры: {str(e)}")
+
+    async def show_group_activity(self, query, chat_id: int):
+        """Показывает активность пользователей в группе"""
+        try:
+            # Получаем статистику активности
+            user_stats = self.db.get_user_activity_stats(chat_id, 7)
+            
+            if not user_stats:
+                await query.edit_message_text("❌ Нет данных об активности")
+                return
+            
+            # Получаем информацию о группе
+            chat_info = self.db.get_chat_info(chat_id)
+            group_title = chat_info.get('title', f'Группа {chat_id}') if chat_info else f'Группа {chat_id}'
+            
+            activity_info = f"👥 **АКТИВНОСТЬ ПОЛЬЗОВАТЕЛЕЙ В ГРУППЕ**\n\n📋 **{group_title}**\n🆔 ID: `{chat_id}`\n📅 Период: последние 7 дней\n\n"
+            
+            for i, user in enumerate(user_stats[:10], 1):  # Топ 10 пользователей
+                display_name = user.get('display_name', f"Пользователь {user['user_id']}")
+                messages_count = user['messages_count']
+                total_time = user.get('total_time_minutes', 0)
+                
+                activity_info += f"{i}. **{display_name}**\n"
+                activity_info += f"   💬 Сообщений: {messages_count}\n"
+                activity_info += f"   ⏱ Время в чате: {total_time} мин\n\n"
+            
+            keyboard = [[InlineKeyboardButton("🔙 Назад к меню", callback_data=f"action_back_{chat_id}")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await query.edit_message_text(activity_info, parse_mode='Markdown', reply_markup=reply_markup)
+            
+        except Exception as e:
+            await query.edit_message_text(f"❌ Ошибка при получении активности: {str(e)}")
+
+    async def show_group_mentions(self, query, chat_id: int):
+        """Показывает статистику упоминаний в группе"""
+        try:
+            # Получаем статистику упоминаний
+            mention_stats = self.db.get_mention_stats(chat_id, 7)
+            
+            if not mention_stats:
+                await query.edit_message_text("❌ Нет данных об упоминаниях")
+                return
+            
+            # Получаем информацию о группе
+            chat_info = self.db.get_chat_info(chat_id)
+            group_title = chat_info.get('title', f'Группа {chat_id}') if chat_info else f'Группа {chat_id}'
+            
+            mentions_info = f"📢 **СТАТИСТИКА УПОМИНАНИЙ В ГРУППЕ**\n\n📋 **{group_title}**\n🆔 ID: `{chat_id}`\n📅 Период: последние 7 дней\n\n"
+            
+            for i, mention in enumerate(mention_stats[:10], 1):  # Топ 10 упоминаний
+                username = mention.get('mentioned_username', 'Неизвестно')
+                mention_count = mention['mention_count']
+                
+                mentions_info += f"{i}. **@{username}**\n"
+                mentions_info += f"   📊 Упоминаний: {mention_count}\n\n"
+            
+            keyboard = [[InlineKeyboardButton("🔙 Назад к меню", callback_data=f"action_back_{chat_id}")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await query.edit_message_text(mentions_info, parse_mode='Markdown', reply_markup=reply_markup)
+            
+        except Exception as e:
+            await query.edit_message_text(f"❌ Ошибка при получении упоминаний: {str(e)}")
+
+    async def show_all_reports(self, query):
+        """Показывает краткие отчеты по всем группам"""
+        try:
+            groups = self.db.get_monitored_groups()
+            
+            if not groups:
+                await query.edit_message_text("❌ Нет групп для анализа")
+                return
+            
+            all_reports = "📊 **ОТЧЕТЫ ПО ВСЕМ ГРУППАМ**\n\n"
+            
+            for group in groups:
+                chat_id = group['chat_id']
+                group_title = group.get('title', f'Группа {chat_id}')
+                messages_count = group.get('messages_count', 0)
+                users_count = group.get('users_count', 0)
+                
+                all_reports += f"📋 **{group_title}**\n"
+                all_reports += f"🆔 ID: `{chat_id}`\n"
+                all_reports += f"💬 Сообщений: {messages_count}\n"
+                all_reports += f"👥 Пользователей: {users_count}\n\n"
+            
+            keyboard = [[InlineKeyboardButton("🔙 Назад к группам", callback_data="back_to_groups")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await query.edit_message_text(all_reports, parse_mode='Markdown', reply_markup=reply_markup)
+            
+        except Exception as e:
+            await query.edit_message_text(f"❌ Ошибка при получении отчетов: {str(e)}")
+
+    async def show_all_temperature(self, query):
+        """Показывает температуру всех групп"""
+        try:
+            groups = self.db.get_monitored_groups()
+            
+            if not groups:
+                await query.edit_message_text("❌ Нет групп для анализа")
+                return
+            
+            all_temperature = "🌡️ **ТЕМПЕРАТУРА ВСЕХ ГРУПП**\n\n"
+            
+            for group in groups:
+                chat_id = group['chat_id']
+                group_title = group.get('title', f'Группа {chat_id}')
+                
+                # Получаем сообщения для анализа
+                messages = self.db.get_messages_for_period(chat_id, 7)
+                
+                if messages:
+                    analysis = self.conversation_analyzer.analyze_conversation_temperature(messages, 7)
+                    temperature_emoji = self.conversation_analyzer.get_temperature_emoji(analysis['temperature'])
+                    
+                    all_temperature += f"📋 **{group_title}**\n"
+                    all_temperature += f"{temperature_emoji} Температура: **{analysis['temperature']}/10**\n"
+                    all_temperature += f"💬 Сообщений: {len(messages)}\n\n"
+                else:
+                    all_temperature += f"📋 **{group_title}**\n"
+                    all_temperature += f"❄️ Нет данных\n\n"
+            
+            keyboard = [[InlineKeyboardButton("🔙 Назад к группам", callback_data="back_to_groups")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await query.edit_message_text(all_temperature, parse_mode='Markdown', reply_markup=reply_markup)
+            
+        except Exception as e:
+            await query.edit_message_text(f"❌ Ошибка при анализе температуры: {str(e)}")
+
+    async def show_groups_from_callback(self, query):
+        """Показывает список групп из callback"""
+        try:
+            # Получаем список групп из базы данных
+            groups = self.db.get_monitored_groups()
+            
+            if not groups:
+                await query.edit_message_text("📋 Пока нет данных о группах. Используйте команду `/collect_history` в группе для начала мониторинга.")
+                return
+            
+            groups_info = "📋 **ГРУППЫ ПОД МОНИТОРИНГОМ:**\n\n"
+            
+            for i, group in enumerate(groups, 1):
+                group_id = group['chat_id']
+                group_title = group.get('title', f'Группа {group_id}')
+                chat_type = group.get('chat_type', 'группа')
+                messages_count = group.get('messages_count', 0)
+                users_count = group.get('users_count', 0)
+                member_count = group.get('member_count', 0)
+                last_activity = group.get('last_activity', 'Неизвестно')
+                
+                groups_info += f"{i}. **{group_title}**\n"
+                groups_info += f"   📋 Тип: {chat_type}\n"
+                groups_info += f"   🆔 ID: `{group_id}`\n"
+                groups_info += f"   💬 Сообщений: {messages_count}\n"
+                groups_info += f"   👥 Активных пользователей: {users_count}\n"
+                if member_count:
+                    groups_info += f"   👤 Всего участников: {member_count}\n"
+                groups_info += f"   ⏰ Последняя активность: {last_activity}\n\n"
+            
+            groups_info += "💡 **Выберите группу для анализа:**\n"
+            
+            # Создаем кнопки для каждой группы
+            keyboard = []
+            for group in groups:
+                group_id = group['chat_id']
+                group_title = group.get('title', f'Группа {group_id}')
+                # Ограничиваем длину названия для кнопки
+                button_text = group_title[:30] + "..." if len(group_title) > 30 else group_title
+                keyboard.append([InlineKeyboardButton(button_text, callback_data=f"group_{group_id}")])
+            
+            # Добавляем кнопки для общих действий
+            keyboard.append([
+                InlineKeyboardButton("📊 Все отчеты", callback_data="all_reports"),
+                InlineKeyboardButton("🌡️ Температура всех", callback_data="all_temperature")
+            ])
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(groups_info, parse_mode='Markdown', reply_markup=reply_markup)
+            
+        except Exception as e:
+            await query.edit_message_text(f"❌ Ошибка при получении групп: {str(e)}")
 
 # Создаем экземпляр бота
 try:
