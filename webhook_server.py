@@ -7,6 +7,7 @@ import os
 import logging
 import time
 from datetime import datetime
+from typing import Dict
 from flask import Flask, request, jsonify
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
