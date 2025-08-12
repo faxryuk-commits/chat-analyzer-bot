@@ -321,6 +321,33 @@ class DatabaseManager:
             
             return [dict(row) for row in cursor.fetchall()]
     
+    def get_monitored_groups(self) -> List[Dict]:
+        """Получает список групп, которые мониторит бот"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                SELECT 
+                    chat_id,
+                    COUNT(*) as messages_count,
+                    COUNT(DISTINCT user_id) as users_count,
+                    MAX(datetime(date, 'unixepoch')) as last_activity
+                FROM messages 
+                GROUP BY chat_id
+                ORDER BY messages_count DESC
+            ''')
+            
+            groups = []
+            for row in cursor.fetchall():
+                groups.append({
+                    'chat_id': row['chat_id'],
+                    'messages_count': row['messages_count'],
+                    'users_count': row['users_count'],
+                    'last_activity': row['last_activity']
+                })
+            
+            return groups
+    
     def get_task_stats(self, chat_id: int, days: int = 45) -> Dict:
         """Получает статистику задач"""
         with self.get_connection() as conn:

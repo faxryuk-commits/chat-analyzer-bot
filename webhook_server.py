@@ -73,6 +73,10 @@ class CloudChatAnalyzerBot:
         self.application.add_handler(CommandHandler("daily_report", self.generate_daily_report))
         self.application.add_handler(CommandHandler("myid", self.show_my_id))
         self.application.add_handler(CommandHandler("setup_monitoring", self.setup_monitoring))
+        self.application.add_handler(CommandHandler("groups", self.show_groups))
+        self.application.add_handler(CommandHandler("group_report", self.group_report))
+        self.application.add_handler(CommandHandler("group_activity", self.group_activity))
+        self.application.add_handler(CommandHandler("group_mentions", self.group_mentions))
         
         # Обработчик сообщений
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
@@ -147,12 +151,21 @@ class CloudChatAnalyzerBot:
 
 **Команды для администраторов:**
 /admin - панель администратора
+/myid - показать ваш ID и права
 /collect_history - собрать историю сообщений
 /schedule_report время - настроить автоматические отчеты
 /export_data - экспорт данных в CSV
 
+**Команды для работы с группами (только в личных сообщениях):**
+/groups - список групп под мониторингом
+/group_report <ID группы> [дни] - отчет по группе
+/group_activity <ID группы> [дни] - активность пользователей в группе
+/group_mentions <ID группы> [дни] - статистика упоминаний в группе
+
 **Примеры использования:**
 /report 7 - отчет за последние 7 дней
+/group_report -1001335359141 7 - отчет по группе за неделю
+/group_activity -1001335359141 - активность в группе за неделю
 /task_add @ivan подготовить презентацию к завтра
 /task_complete 5 - отметить задачу с ID 5 как выполненную
         """
@@ -650,6 +663,198 @@ class CloudChatAnalyzerBot:
 """
         
         await update.message.reply_text(user_info, parse_mode='Markdown')
+    
+    async def show_groups(self, update: Update, context):
+        """Показывает список групп, которые мониторит бот"""
+        user_id = update.effective_user.id
+        
+        if user_id not in ADMIN_USER_IDS:
+            await update.message.reply_text("❌ У вас нет прав администратора")
+            return
+        
+        # Получаем список групп из базы данных
+        groups = self.db.get_monitored_groups()
+        
+        if not groups:
+            await update.message.reply_text("📋 Пока нет данных о группах. Используйте команду `/collect_history` в группе для начала мониторинга.")
+            return
+        
+        groups_info = "📋 **ГРУППЫ ПОД МОНИТОРИНГОМ:**\n\n"
+        
+        for i, group in enumerate(groups, 1):
+            group_id = group['chat_id']
+            group_title = group.get('title', f'Группа {group_id}')
+            messages_count = group.get('messages_count', 0)
+            users_count = group.get('users_count', 0)
+            last_activity = group.get('last_activity', 'Неизвестно')
+            
+            groups_info += f"{i}. **{group_title}**\n"
+            groups_info += f"   ID: `{group_id}`\n"
+            groups_info += f"   Сообщений: {messages_count}\n"
+            groups_info += f"   Пользователей: {users_count}\n"
+            groups_info += f"   Последняя активность: {last_activity}\n\n"
+        
+        groups_info += "💡 **Команды для работы с группами:**\n"
+        groups_info += "• `/group_report <ID группы>` - отчет по группе\n"
+        groups_info += "• `/group_activity <ID группы>` - активность пользователей\n"
+        groups_info += "• `/group_mentions <ID группы>` - статистика упоминаний\n"
+        
+        await update.message.reply_text(groups_info, parse_mode='Markdown')
+    
+    async def group_report(self, update: Update, context):
+        """Генерирует отчет по конкретной группе"""
+        user_id = update.effective_user.id
+        
+        if user_id not in ADMIN_USER_IDS:
+            await update.message.reply_text("❌ У вас нет прав администратора")
+            return
+        
+        if not context.args:
+            await update.message.reply_text("❌ Укажите ID группы. Пример: `/group_report -1001335359141`")
+            return
+        
+        try:
+            chat_id = int(context.args[0])
+        except ValueError:
+            await update.message.reply_text("❌ Неверный формат ID группы. Используйте число.")
+            return
+        
+        days = 7  # По умолчанию за неделю
+        if len(context.args) > 1:
+            try:
+                days = int(context.args[1])
+            except ValueError:
+                await update.message.reply_text("❌ Неверный формат количества дней.")
+                return
+        
+        # Получаем данные группы
+        messages = self.db.get_messages_for_period(chat_id, days)
+        user_stats = self.db.get_user_activity_stats(chat_id, days)
+        mention_stats = self.db.get_mention_stats(chat_id, days)
+        task_stats = self.db.get_task_stats(chat_id, days)
+        
+        if not messages:
+            await update.message.reply_text(f"❌ Нет данных для группы {chat_id} за последние {days} дней.")
+            return
+        
+        # Анализируем данные
+        texts = [msg['text'] for msg in messages if msg['text']]
+        topic_distribution = self.text_analyzer.get_topic_distribution(texts)
+        conversation_flow = self.text_analyzer.analyze_conversation_flow(messages)
+        
+        # Анализируем активность по часам с учетом часового пояса
+        hourly_activity = timezone_manager.get_activity_hours(messages, 'Europe/Moscow')
+        
+        chat_data = {
+            'total_messages': len(messages),
+            'active_users': len(user_stats),
+            'total_mentions': sum(m['mention_count'] for m in mention_stats),
+            'top_users': user_stats[:5],
+            'popular_topics': sorted(topic_distribution.items(), key=lambda x: x[1], reverse=True)[:5],
+            'task_stats': task_stats,
+            'hourly_activity': hourly_activity
+        }
+        
+        report = self.report_generator.generate_daily_report(chat_data)
+        
+        # Добавляем заголовок с информацией о группе
+        group_info = f"📊 **ОТЧЕТ ПО ГРУППЕ** `{chat_id}`\n"
+        group_info += f"📅 Период: последние {days} дней\n\n"
+        
+        full_report = group_info + report
+        await update.message.reply_text(full_report)
+    
+    async def group_activity(self, update: Update, context):
+        """Показывает активность пользователей в конкретной группе"""
+        user_id = update.effective_user.id
+        
+        if user_id not in ADMIN_USER_IDS:
+            await update.message.reply_text("❌ У вас нет прав администратора")
+            return
+        
+        if not context.args:
+            await update.message.reply_text("❌ Укажите ID группы. Пример: `/group_activity -1001335359141`")
+            return
+        
+        try:
+            chat_id = int(context.args[0])
+        except ValueError:
+            await update.message.reply_text("❌ Неверный формат ID группы. Используйте число.")
+            return
+        
+        days = 7  # По умолчанию за неделю
+        if len(context.args) > 1:
+            try:
+                days = int(context.args[1])
+            except ValueError:
+                await update.message.reply_text("❌ Неверный формат количества дней.")
+                return
+        
+        # Получаем статистику активности
+        user_stats = self.db.get_user_activity_stats(chat_id, days)
+        
+        if not user_stats:
+            await update.message.reply_text(f"❌ Нет данных об активности в группе {chat_id} за последние {days} дней.")
+            return
+        
+        activity_info = f"👥 **АКТИВНОСТЬ ПОЛЬЗОВАТЕЛЕЙ В ГРУППЕ** `{chat_id}`\n"
+        activity_info += f"📅 Период: последние {days} дней\n\n"
+        
+        for i, user in enumerate(user_stats[:10], 1):  # Топ 10 пользователей
+            display_name = user.get('display_name', f"Пользователь {user['user_id']}")
+            messages_count = user['messages_count']
+            total_time = user.get('total_time_minutes', 0)
+            
+            activity_info += f"{i}. **{display_name}**\n"
+            activity_info += f"   💬 Сообщений: {messages_count}\n"
+            activity_info += f"   ⏱ Время в чате: {total_time} мин\n\n"
+        
+        await update.message.reply_text(activity_info, parse_mode='Markdown')
+    
+    async def group_mentions(self, update: Update, context):
+        """Показывает статистику упоминаний в конкретной группе"""
+        user_id = update.effective_user.id
+        
+        if user_id not in ADMIN_USER_IDS:
+            await update.message.reply_text("❌ У вас нет прав администратора")
+            return
+        
+        if not context.args:
+            await update.message.reply_text("❌ Укажите ID группы. Пример: `/group_mentions -1001335359141`")
+            return
+        
+        try:
+            chat_id = int(context.args[0])
+        except ValueError:
+            await update.message.reply_text("❌ Неверный формат ID группы. Используйте число.")
+            return
+        
+        days = 7  # По умолчанию за неделю
+        if len(context.args) > 1:
+            try:
+                days = int(context.args[1])
+            except ValueError:
+                await update.message.reply_text("❌ Неверный формат количества дней.")
+                return
+        
+        # Получаем статистику упоминаний
+        mention_stats = self.db.get_mention_stats(chat_id, days)
+        
+        if not mention_stats:
+            await update.message.reply_text(f"❌ Нет данных об упоминаниях в группе {chat_id} за последние {days} дней.")
+            return
+        
+        mentions_info = f"📢 **СТАТИСТИКА УПОМИНАНИЙ В ГРУППЕ** `{chat_id}`\n"
+        mentions_info += f"📅 Период: последние {days} дней\n\n"
+        
+        for i, mention in enumerate(mention_stats[:10], 1):  # Топ 10 упоминаний
+            username = mention.get('mentioned_username', 'Неизвестно')
+            mention_count = mention['mention_count']
+            
+            mentions_info += f"{i}. **@{username}**\n"
+            mentions_info += f"   📊 Упоминаний: {mention_count}\n\n"
+        
+        await update.message.reply_text(mentions_info, parse_mode='Markdown')
 
 # Создаем экземпляр бота
 bot = CloudChatAnalyzerBot()
