@@ -71,6 +71,7 @@ class CloudChatAnalyzerBot:
         self.application.add_handler(CommandHandler("collect_history", self.collect_history))
         self.application.add_handler(CommandHandler("collect_chat", self.collect_chat_history))
         self.application.add_handler(CommandHandler("daily_report", self.generate_daily_report))
+        self.application.add_handler(CommandHandler("myid", self.show_my_id))
         self.application.add_handler(CommandHandler("setup_monitoring", self.setup_monitoring))
         
         # Обработчик сообщений
@@ -625,6 +626,30 @@ class CloudChatAnalyzerBot:
         }
         
         return False
+    
+    async def show_my_id(self, update: Update, context):
+        """Показывает ID пользователя и информацию об администраторах"""
+        user = update.effective_user
+        chat_id = update.effective_chat.id
+        
+        # Формируем информацию о пользователе
+        user_info = f"""
+🆔 **Информация о пользователе:**
+
+👤 **Ваш ID:** `{user.id}`
+👤 **Имя:** {user.first_name}
+👤 **Фамилия:** {user.last_name or 'Не указана'}
+👤 **Username:** @{user.username or 'Не указан'}
+
+🔧 **Права администратора:** {'✅ Да' if user.id in ADMIN_USER_IDS else '❌ Нет'}
+
+📋 **Текущие администраторы:** {ADMIN_USER_IDS}
+
+💡 **Для добавления администратора:**
+Обновите переменную `ADMIN_USER_IDS` в Railway Dashboard
+"""
+        
+        await update.message.reply_text(user_info, parse_mode='Markdown')
 
 # Создаем экземпляр бота
 bot = CloudChatAnalyzerBot()
