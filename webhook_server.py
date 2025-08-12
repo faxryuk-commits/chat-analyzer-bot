@@ -1051,15 +1051,30 @@ def webhook():
             # Создаем новый event loop для каждого webhook
             def process_webhook():
                 try:
+                    # Создаем новый event loop
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
+                    
+                    # Обрабатываем webhook
                     loop.run_until_complete(bot.handle_webhook(update_dict))
-                    loop.close()
+                    
+                    # Закрываем loop только если он не закрыт
+                    if not loop.is_closed():
+                        loop.close()
+                        
                 except Exception as e:
                     logger.error(f"Ошибка в process_webhook: {e}")
+                finally:
+                    # Убеждаемся, что loop закрыт
+                    try:
+                        if 'loop' in locals() and not loop.is_closed():
+                            loop.close()
+                    except:
+                        pass
             
             # Запускаем в отдельном потоке
             thread = threading.Thread(target=process_webhook)
+            thread.daemon = True  # Делаем поток демоном
             thread.start()
             thread.join(timeout=10)  # Ждем максимум 10 секунд
             
