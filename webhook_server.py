@@ -5,11 +5,11 @@
 
 import os
 import logging
+import time
 from flask import Flask, request, jsonify
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 import threading
-import time
 
 from config import BOT_TOKEN, ADMIN_USER_IDS, HISTORY_DAYS, REPORT_TIME, TASK_TIMEOUT_HOURS
 from database import DatabaseManager
@@ -35,6 +35,7 @@ class CloudChatAnalyzerBot:
         self.message_collector = MessageCollector(BOT_TOKEN, self.db, self.text_analyzer)
         self.active_chats = set()
         self.processed_updates = set()  # Для предотвращения дублирования
+        self.last_commands = {}  # Для отслеживания последних команд пользователей
         
         # Создаем приложение
         self.application = Application.builder().token(BOT_TOKEN).build()
@@ -85,6 +86,11 @@ class CloudChatAnalyzerBot:
         """Обработчик команды /start"""
         user = update.effective_user
         chat_id = update.effective_chat.id
+        message_id = update.message.message_id
+        
+        # Проверяем дублирование команды
+        if self._is_duplicate_command(user.id, 'start', message_id):
+            return
         
         # Логируем команду
         logger.info(f"Команда /start от пользователя {user.id} в чате {chat_id}")
@@ -216,6 +222,11 @@ class CloudChatAnalyzerBot:
         """Генерирует отчет по активности"""
         chat_id = update.effective_chat.id
         user_id = update.effective_user.id
+        message_id = update.message.message_id
+        
+        # Проверяем дублирование команды
+        if self._is_duplicate_command(user_id, 'report', message_id):
+            return
         
         # Логируем команду
         logger.info(f"Команда /report от пользователя {user_id} в чате {chat_id}")
@@ -502,15 +513,6 @@ class CloudChatAnalyzerBot:
         """Обрабатывает webhook от Telegram"""
         update = Update.de_json(update_dict, self.application.bot)
         
-        # Проверяем, не обрабатывали ли мы уже это обновление
-        update_id = update.update_id
-        if update_id in self.processed_updates:
-            logger.info(f"Пропускаем дублированное обновление: {update_id}")
-            return
-        
-        # Добавляем ID обновления в обработанные
-        self.processed_updates.add(update_id)
-        
         # Ограничиваем размер множества обработанных обновлений
         if len(self.processed_updates) > 1000:
             # Удаляем старые записи
@@ -520,16 +522,14 @@ class CloudChatAnalyzerBot:
         if update.message:
             user = update.message.from_user
             chat = update.message.chat
-            logger.info(f"Обрабатываем обновление {update_id}: пользователь {user.id} в чате {chat.id}")
+            logger.info(f"Обрабатываем обновление {update.update_id}: пользователь {user.id} в чате {chat.id}")
         
         try:
             # Обрабатываем обновление
             await self.application.process_update(update)
-            logger.info(f"Обновление {update_id} успешно обработано")
+            logger.info(f"Обновление {update.update_id} успешно обработано")
         except Exception as e:
-            logger.error(f"Ошибка при обработке обновления {update_id}: {e}")
-            # Удаляем из обработанных в случае ошибки
-            self.processed_updates.discard(update_id)
+            logger.error(f"Ошибка при обработке обновления {update.update_id}: {e}")
             raise
     
     def _get_user_display_name(self, user):
@@ -542,6 +542,30 @@ class CloudChatAnalyzerBot:
             return user.first_name
         else:
             return f"Пользователь {user.id}"
+    
+    def _is_duplicate_command(self, user_id: int, command: str, message_id: int) -> bool:
+        """Проверяет, является ли команда дублированной"""
+        user_key = f"{user_id}_{command}"
+        last_info = self.last_commands.get(user_key)
+        
+        if last_info and last_info['message_id'] == message_id:
+            logger.info(f"Дублированная команда {command} от пользователя {user_id}")
+            return True
+        
+        # Сохраняем информацию о команде
+        self.last_commands[user_key] = {
+            'message_id': message_id,
+            'timestamp': time.time()
+        }
+        
+        # Очищаем старые записи (старше 5 минут)
+        current_time = time.time()
+        self.last_commands = {
+            k: v for k, v in self.last_commands.items() 
+            if current_time - v['timestamp'] < 300
+        }
+        
+        return False
 
 # Создаем экземпляр бота
 bot = CloudChatAnalyzerBot()
@@ -558,22 +582,30 @@ def webhook():
         update_dict = request.get_json()
         
         # Логируем входящий webhook
-        logger.info(f"Получен webhook: {update_dict.get('update_id', 'unknown')}")
+        update_id = update_dict.get('update_id', 'unknown')
+        logger.info(f"Получен webhook: {update_id}")
         
-        # Обрабатываем обновление в отдельном потоке
-        def process_update():
+        # Проверяем, не обрабатывали ли мы уже это обновление
+        if update_id in bot.processed_updates:
+            logger.info(f"Пропускаем дублированное обновление: {update_id}")
+            return jsonify({"status": "duplicate"})
+        
+        # Добавляем ID обновления в обработанные сразу
+        bot.processed_updates.add(update_id)
+        
+        # Обрабатываем обновление синхронно для надежности
+        try:
             import asyncio
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            try:
-                loop.run_until_complete(bot.handle_webhook(update_dict))
-            except Exception as e:
-                logger.error(f"Ошибка при обработке webhook: {e}")
-            finally:
-                loop.close()
-        
-        thread = threading.Thread(target=process_update)
-        thread.start()
+            loop.run_until_complete(bot.handle_webhook(update_dict))
+            loop.close()
+            logger.info(f"Webhook {update_id} успешно обработан")
+        except Exception as e:
+            logger.error(f"Ошибка при обработке webhook {update_id}: {e}")
+            # Удаляем из обработанных в случае ошибки
+            bot.processed_updates.discard(update_id)
+            return jsonify({"status": "error", "message": str(e)})
         
         return jsonify({"status": "ok"})
 
