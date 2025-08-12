@@ -9,6 +9,7 @@ import numpy as np
 from wordcloud import WordCloud
 import io
 import base64
+from timezone_utils import timezone_manager
 
 # Настройка для русского языка
 plt.rcParams['font.family'] = ['DejaVu Sans', 'Arial Unicode MS', 'sans-serif']
@@ -47,8 +48,20 @@ class ReportGenerator:
         if chat_data.get('top_users'):
             report.append("\n👥 **ТОП АКТИВНЫХ ПОЛЬЗОВАТЕЛЕЙ:**")
             for i, user in enumerate(chat_data['top_users'][:5], 1):
-                name = user.get('name', f"Пользователь {user['user_id']}")
-                report.append(f"{i}. {name}: {user['messages_count']} сообщений")
+                # Используем отображаемое имя пользователя
+                display_name = user.get('display_name')
+                if not display_name:
+                    if user.get('username'):
+                        display_name = f"@{user['username']}"
+                    elif user.get('first_name'):
+                        if user.get('last_name'):
+                            display_name = f"{user['first_name']} {user['last_name']}"
+                        else:
+                            display_name = user['first_name']
+                    else:
+                        display_name = f"Пользователь {user['user_id']}"
+                
+                report.append(f"{i}. {display_name}: {user['messages_count']} сообщений")
         
         # Популярные темы
         if chat_data.get('popular_topics'):
@@ -69,7 +82,9 @@ class ReportGenerator:
         if chat_data.get('hourly_activity'):
             report.append("\n⏰ **АКТИВНОСТЬ ПО ЧАСАМ:**")
             peak_hour = max(chat_data['hourly_activity'].items(), key=lambda x: x[1])
-            report.append(f"• Пик активности: {peak_hour[0]}:00 ({peak_hour[1]} сообщений)")
+            # Форматируем время с ведущим нулем
+            formatted_hour = f"{peak_hour[0]:02d}"
+            report.append(f"• Пик активности: {formatted_hour}:00 ({peak_hour[1]} сообщений)")
         
         # Рекомендации
         report.append("\n💡 **РЕКОМЕНДАЦИИ:**")

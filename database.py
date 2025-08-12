@@ -34,6 +34,7 @@ class DatabaseManager:
                     username TEXT,
                     first_name TEXT,
                     last_name TEXT,
+                    display_name TEXT,
                     text TEXT,
                     date INTEGER NOT NULL,
                     reply_to_message_id INTEGER,
@@ -133,9 +134,9 @@ class DatabaseManager:
             
             cursor.execute('''
                 INSERT INTO messages (
-                    message_id, chat_id, user_id, username, first_name, last_name,
+                    message_id, chat_id, user_id, username, first_name, last_name, display_name,
                     text, date, reply_to_message_id, forward_from_user_id, is_edited, edit_date
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 message_data['message_id'],
                 message_data['chat_id'],
@@ -143,6 +144,7 @@ class DatabaseManager:
                 message_data.get('username'),
                 message_data.get('first_name'),
                 message_data.get('last_name'),
+                message_data.get('display_name', ''),
                 message_data.get('text'),
                 message_data['date'],
                 message_data.get('reply_to_message_id'),
@@ -212,7 +214,7 @@ class DatabaseManager:
             
             return cursor.lastrowid
     
-    def update_user_activity(self, user_id: int, chat_id: int, message_time: datetime):
+    def update_user_activity(self, user_id: int, chat_id: int, message_time: datetime, display_name: str = None):
         """Обновляет активность пользователя"""
         date = message_time.date()
         
@@ -280,10 +282,11 @@ class DatabaseManager:
                     ua.last_message_time,
                     m.username,
                     m.first_name,
-                    m.last_name
+                    m.last_name,
+                    m.display_name
                 FROM user_activity ua
                 LEFT JOIN (
-                    SELECT DISTINCT user_id, username, first_name, last_name 
+                    SELECT DISTINCT user_id, username, first_name, last_name, display_name 
                     FROM messages 
                     WHERE chat_id = ?
                 ) m ON ua.user_id = m.user_id

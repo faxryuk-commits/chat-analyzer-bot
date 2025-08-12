@@ -16,6 +16,7 @@ from database import DatabaseManager
 from text_analyzer import TextAnalyzer
 from report_generator import ReportGenerator
 from message_collector import MessageCollector
+from timezone_utils import timezone_manager
 
 # Настройка логирования
 logging.basicConfig(
@@ -157,6 +158,9 @@ class CloudChatAnalyzerBot:
         chat_id = message.chat.id
         user = message.from_user
         
+        # Получаем имя пользователя для отображения
+        user_display_name = self._get_user_display_name(user)
+        
         # Сохраняем сообщение в базу данных
         message_data = {
             'message_id': message.message_id,
@@ -165,6 +169,7 @@ class CloudChatAnalyzerBot:
             'username': user.username,
             'first_name': user.first_name,
             'last_name': user.last_name,
+            'display_name': user_display_name,
             'text': message.text,
             'date': int(message.date.timestamp()),
             'reply_to_message_id': message.reply_to_message.message_id if message.reply_to_message else None,
@@ -174,7 +179,7 @@ class CloudChatAnalyzerBot:
         }
         
         message_id = self.db.save_message(message_data)
-        self.db.update_user_activity(user.id, chat_id, message.date)
+        self.db.update_user_activity(user.id, chat_id, message.date, user_display_name)
         
         # Анализируем текст сообщения
         text = message.text
@@ -225,6 +230,9 @@ class CloudChatAnalyzerBot:
         topic_distribution = self.text_analyzer.get_topic_distribution(texts)
         conversation_flow = self.text_analyzer.analyze_conversation_flow(messages)
         
+        # Анализируем активность по часам с учетом часового пояса
+        hourly_activity = timezone_manager.get_activity_hours(messages, 'Europe/Moscow')
+        
         chat_data = {
             'total_messages': len(messages),
             'active_users': len(user_stats),
@@ -232,7 +240,7 @@ class CloudChatAnalyzerBot:
             'top_users': user_stats[:5],
             'popular_topics': sorted(topic_distribution.items(), key=lambda x: x[1], reverse=True)[:5],
             'task_stats': task_stats,
-            'hourly_activity': conversation_flow.get('hourly_activity', {})
+            'hourly_activity': hourly_activity
         }
         
         report = self.report_generator.generate_daily_report(chat_data)
@@ -503,6 +511,17 @@ class CloudChatAnalyzerBot:
         
         # Обрабатываем обновление
         await self.application.process_update(update)
+    
+    def _get_user_display_name(self, user):
+        """Получает отображаемое имя пользователя"""
+        if user.username:
+            return f"@{user.username}"
+        elif user.first_name and user.last_name:
+            return f"{user.first_name} {user.last_name}"
+        elif user.first_name:
+            return user.first_name
+        else:
+            return f"Пользователь {user.id}"
 
 # Создаем экземпляр бота
 bot = CloudChatAnalyzerBot()
