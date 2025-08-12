@@ -17,6 +17,7 @@ from text_analyzer import TextAnalyzer
 from report_generator import ReportGenerator
 from message_collector import MessageCollector
 from timezone_utils import timezone_manager
+from conversation_analyzer import ConversationAnalyzer
 
 # Настройка логирования
 logging.basicConfig(
@@ -33,6 +34,7 @@ class CloudChatAnalyzerBot:
         self.text_analyzer = TextAnalyzer()
         self.report_generator = ReportGenerator()
         self.message_collector = MessageCollector(BOT_TOKEN, self.db, self.text_analyzer)
+        self.conversation_analyzer = ConversationAnalyzer()
         self.active_chats = set()
         self.processed_updates = set()  # Для предотвращения дублирования
         self.last_commands = {}  # Для отслеживания последних команд пользователей
@@ -77,6 +79,7 @@ class CloudChatAnalyzerBot:
         self.application.add_handler(CommandHandler("group_report", self.group_report))
         self.application.add_handler(CommandHandler("group_activity", self.group_activity))
         self.application.add_handler(CommandHandler("group_mentions", self.group_mentions))
+        self.application.add_handler(CommandHandler("temperature", self.analyze_temperature))
         
         # Обработчик сообщений
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
@@ -161,6 +164,7 @@ class CloudChatAnalyzerBot:
 /group_report <ID группы> [дни] - отчет по группе
 /group_activity <ID группы> [дни] - активность пользователей в группе
 /group_mentions <ID группы> [дни] - статистика упоминаний в группе
+/temperature <ID группы> [дни] - анализ температуры беседы (AI)
 
 **Примеры использования:**
 /report 7 - отчет за последние 7 дней
@@ -891,6 +895,105 @@ class CloudChatAnalyzerBot:
             mentions_info += f"   📊 Упоминаний: {mention_count}\n\n"
         
         await update.message.reply_text(mentions_info, parse_mode='Markdown')
+    
+    async def analyze_temperature(self, update: Update, context):
+        """Анализирует температуру беседы в группе"""
+        user_id = update.effective_user.id
+        
+        if user_id not in ADMIN_USER_IDS:
+            await update.message.reply_text("❌ У вас нет прав администратора")
+            return
+        
+        if not context.args:
+            await update.message.reply_text("❌ Укажите ID группы. Пример: `/temperature -1001335359141`")
+            return
+        
+        try:
+            chat_id = int(context.args[0])
+        except ValueError:
+            await update.message.reply_text("❌ Неверный формат ID группы. Используйте число.")
+            return
+        
+        days = 7  # По умолчанию за неделю
+        if len(context.args) > 1:
+            try:
+                days = int(context.args[1])
+            except ValueError:
+                await update.message.reply_text("❌ Неверный формат количества дней.")
+                return
+        
+        # Получаем сообщения для анализа
+        messages = self.db.get_messages_for_period(chat_id, days)
+        
+        if not messages:
+            await update.message.reply_text(f"❌ Нет данных для анализа температуры в группе {chat_id} за последние {days} дней.")
+            return
+        
+        # Получаем информацию о группе
+        chat_info = self.db.get_chat_info(chat_id)
+        group_title = chat_info.get('title', f'Группа {chat_id}') if chat_info else f'Группа {chat_id}'
+        
+        # Анализируем температуру
+        analysis = self.conversation_analyzer.analyze_conversation_temperature(messages, days)
+        
+        # Формируем отчет
+        temperature_emoji = self.conversation_analyzer.get_temperature_emoji(analysis['temperature'])
+        
+        report = f"""
+🌡️ **АНАЛИЗ ТЕМПЕРАТУРЫ БЕСЕДЫ**
+
+📋 **Группа:** {group_title}
+🆔 **ID:** `{chat_id}`
+📅 **Период:** последние {days} дней
+
+{temperature_emoji} **Температура:** **{analysis['temperature']}/10**
+📊 **Уверенность:** {analysis['confidence'] * 100:.0f}%
+
+📝 **Описание:**
+{analysis['description']}
+
+📈 **Детали анализа:**
+• 💬 Всего сообщений: {analysis['details']['total_messages']}
+• 😊 Позитивных: {analysis['details']['emotion_distribution']['positive']}
+• 😔 Негативных: {analysis['details']['emotion_distribution']['negative']}
+• 😐 Нейтральных: {analysis['details']['emotion_distribution']['neutral']}
+• ⚡ Срочных: {analysis['details']['urgency_messages']}
+• ❓ Вопросов: {analysis['details']['question_messages']}
+• ✅ Решений: {analysis['details']['resolution_messages']}
+
+💡 **Рекомендации:**
+{self._get_temperature_recommendations(analysis)}
+"""
+        
+        await update.message.reply_text(report, parse_mode='Markdown')
+    
+    def _get_temperature_recommendations(self, analysis: Dict) -> str:
+        """Генерирует рекомендации на основе анализа температуры"""
+        temperature = analysis['temperature']
+        details = analysis['details']
+        
+        recommendations = []
+        
+        if temperature >= 8.0:
+            recommendations.append("• 🔥 Температура очень высокая - рассмотрите возможность паузы в обсуждении")
+            recommendations.append("• 💬 Попробуйте перевести разговор в более спокойное русло")
+        elif temperature >= 6.5:
+            recommendations.append("• ⚡ Активное обсуждение - следите за эмоциями участников")
+            recommendations.append("• 🤝 Поощряйте конструктивный диалог")
+        elif temperature <= 3.0:
+            recommendations.append("• ❄️ Низкая активность - попробуйте оживить обсуждение")
+            recommendations.append("• 💡 Задавайте открытые вопросы для вовлечения")
+        
+        if details['urgency_messages'] > details['total_messages'] * 0.3:
+            recommendations.append("• ⏰ Много срочных сообщений - проверьте приоритеты")
+        
+        if details['question_messages'] > details['total_messages'] * 0.4:
+            recommendations.append("• ❓ Много вопросов - возможно, нужна дополнительная информация")
+        
+        if not recommendations:
+            recommendations.append("• ✅ Температура в норме - продолжайте в том же духе")
+        
+        return "\n".join(recommendations)
 
 # Создаем экземпляр бота
 bot = CloudChatAnalyzerBot()
