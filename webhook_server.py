@@ -38,6 +38,16 @@ class CloudChatAnalyzerBot:
         # Добавляем обработчики
         self._setup_handlers()
         
+        # Инициализируем приложение
+        import asyncio
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
+        loop.run_until_complete(self.application.initialize())
+        
         # Запускаем планировщик в отдельном потоке
         self.scheduler_thread = threading.Thread(target=self._run_scheduler, daemon=True)
         self.scheduler_thread.start()
@@ -335,6 +345,7 @@ class CloudChatAnalyzerBot:
     async def handle_webhook(self, update_dict):
         """Обрабатывает webhook от Telegram"""
         update = Update.de_json(update_dict, self.application.bot)
+        await self.application.initialize()
         await self.application.process_update(update)
 
 # Создаем экземпляр бота
