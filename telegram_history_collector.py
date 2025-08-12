@@ -37,6 +37,34 @@ class TelegramHistoryCollector:
             print(f"📋 Чат: {chat_title}")
             print(f"📅 Период: с {start_date.strftime('%d.%m.%Y')} по {datetime.now().strftime('%d.%m.%Y')}")
             
+            # Проверяем существующие данные в базе
+            existing_messages = self.db.get_messages_for_period(chat_id, days)
+            existing_count = len(existing_messages)
+            
+            if existing_count > 0:
+                print(f"📊 Найдено {existing_count} существующих сообщений в базе данных")
+                
+                # Анализируем существующие сообщения
+                users_found = set()
+                for message in existing_messages:
+                    if message.get('user_id'):
+                        users_found.add(message['user_id'])
+                
+                print(f"👥 Найдено {len(users_found)} уникальных пользователей в базе данных")
+                
+                # Если данных достаточно, возвращаем статистику
+                if existing_count >= 5:  # Минимум 5 сообщений для демонстрации
+                    return {
+                        'chat_id': chat_id,
+                        'chat_title': chat_title,
+                        'messages_collected': existing_count,
+                        'users_found': len(users_found),
+                        'period_days': days,
+                        'start_date': start_date,
+                        'end_date': datetime.now(),
+                        'source': 'database'
+                    }
+            
             # Собираем сообщения
             messages_collected = 0
             users_found = set()
@@ -50,6 +78,10 @@ class TelegramHistoryCollector:
                 for message in messages:
                     # Проверяем дату сообщения
                     if message.date < start_date:
+                        continue
+                    
+                    # Проверяем, не сохранили ли мы уже это сообщение
+                    if self._message_exists_in_db(message.message_id, chat_id):
                         continue
                     
                     # Получаем отображаемое имя пользователя
@@ -115,8 +147,9 @@ class TelegramHistoryCollector:
             except Exception as e:
                 logger.error(f"Ошибка при получении сообщений из чата: {e}")
                 # Если не удалось получить реальные сообщения, создаем тестовые данные
-                messages_collected = await self._create_test_data(chat_id, days)
-                users_found.add(98838625)  # Добавляем тестового пользователя
+                if existing_count == 0:  # Только если нет существующих данных
+                    messages_collected = await self._create_test_data(chat_id, days)
+                    users_found.add(98838625)  # Добавляем тестового пользователя
             
             print(f"✅ Сбор истории завершен!")
             print(f"📊 Всего собрано сообщений: {messages_collected}")
@@ -197,6 +230,21 @@ class TelegramHistoryCollector:
             return user.first_name
         else:
             return f"Пользователь {user.id}"
+    
+    def _message_exists_in_db(self, message_id: int, chat_id: int) -> bool:
+        """Проверяет, существует ли сообщение в базе данных"""
+        try:
+            with self.db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT COUNT(*) FROM messages 
+                    WHERE message_id = ? AND chat_id = ?
+                ''', (message_id, chat_id))
+                count = cursor.fetchone()[0]
+                return count > 0
+        except Exception as e:
+            logger.error(f"Ошибка при проверке существования сообщения: {e}")
+            return False
     
     async def _create_test_data(self, chat_id: int, days: int) -> int:
         """Создает тестовые данные для демонстрации"""
@@ -285,8 +333,10 @@ class TelegramHistoryCollector:
         
         # Сохраняем тестовые сообщения
         for message_data in test_messages:
-            message_id = self.db.save_message(message_data)
-            messages_collected += 1
+            # Проверяем, не существует ли уже это сообщение
+            if not self._message_exists_in_db(message_data['message_id'], chat_id):
+                message_id = self.db.save_message(message_data)
+                messages_collected += 1
             
             # Анализируем текст сообщения
             if message_data['text']:

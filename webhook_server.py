@@ -392,18 +392,25 @@ class CloudChatAnalyzerBot:
                 await status_message.edit_text(f"❌ Ошибка при сборе истории: {result['error']}")
             else:
                 # Формируем отчет о результатах
+                source_info = ""
+                if result.get('source') == 'database':
+                    source_info = " (из базы данных)"
+                
                 report = f"""
 ✅ **Сбор истории завершен!**
 
 📋 **Результаты:**
 • Чат: {result.get('chat_title', f'ID: {chat_id}')}
 • Период: {result.get('period_days', days)} дней
-• Собрано сообщений: {result.get('messages_collected', 0)}
+• Собрано сообщений: {result.get('messages_collected', 0)}{source_info}
 • Уникальных пользователей: {result.get('users_found', 0)}
 
 📅 **Период сбора:**
 • С: {result.get('start_date', '').strftime('%d.%m.%Y') if result.get('start_date') else 'N/A'}
 • По: {result.get('end_date', '').strftime('%d.%m.%Y') if result.get('end_date') else 'N/A'}
+
+💾 **Источник данных:**
+• База данных: {result.get('source', 'новые сообщения')}
 
 🎯 **Теперь вы можете использовать команды:**
 • `/report` - получить отчет по активности
