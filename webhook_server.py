@@ -416,7 +416,28 @@ class CloudChatAnalyzerBot:
             await update.message.reply_text("☁️ Недостаточно данных для создания облака слов")
             return
         
-        await update.message.reply_text("☁️ Облако слов сгенерировано!")
+        # Формируем отчет о популярных словах
+        wordcloud_report = "☁️ **ОБЛАКО СЛОВ**\n\n"
+        wordcloud_report += f"📊 **Популярные слова в чате за последние 7 дней:**\n\n"
+        
+        # Показываем топ-15 слов
+        for i, (word, count) in enumerate(word_data[:15], 1):
+            # Добавляем эмодзи в зависимости от частоты
+            if count >= 10:
+                emoji = "🔥"
+            elif count >= 5:
+                emoji = "⭐"
+            elif count >= 3:
+                emoji = "💬"
+            else:
+                emoji = "📝"
+            
+            wordcloud_report += f"{i}. {emoji} **{word}** - {count} раз\n"
+        
+        wordcloud_report += f"\n📈 **Всего уникальных слов:** {len(word_data)}"
+        wordcloud_report += f"\n💬 **Проанализировано сообщений:** {len(texts)}"
+        
+        await update.message.reply_text(wordcloud_report, parse_mode='Markdown')
     
     async def button_callback(self, update: Update, context):
         """Обработчик нажатий на кнопки"""
@@ -834,37 +855,52 @@ class CloudChatAnalyzerBot:
     async def group_report(self, update: Update, context):
         """Генерирует отчет по конкретной группе"""
         user_id = update.effective_user.id
+        chat_id = update.effective_chat.id
         
         if user_id not in ADMIN_USER_IDS:
             await update.message.reply_text("❌ У вас нет прав администратора")
             return
         
-        if not context.args:
-            await update.message.reply_text("❌ Укажите ID группы. Пример: `/group_report -1001335359141`")
-            return
-        
-        try:
-            chat_id = int(context.args[0])
-        except ValueError:
-            await update.message.reply_text("❌ Неверный формат ID группы. Используйте число.")
-            return
-        
-        days = 7  # По умолчанию за неделю
-        if len(context.args) > 1:
-            try:
-                days = int(context.args[1])
-            except ValueError:
-                await update.message.reply_text("❌ Неверный формат количества дней.")
+        # Если команда вызвана в группе, используем текущую группу
+        if chat_id < 0:  # Это группа
+            target_chat_id = chat_id
+            days = 7
+            if context.args:
+                try:
+                    days = int(context.args[0])
+                except ValueError:
+                    await update.message.reply_text("❌ Неверный формат количества дней. Пример: `/group_report 7`")
+                    return
+        else:  # Это личные сообщения
+            # Получаем ID группы из аргументов
+            if not context.args:
+                # Показываем список групп
+                await self.show_groups(update, context)
                 return
+            
+            try:
+                target_chat_id = int(context.args[0])
+            except ValueError:
+                await update.message.reply_text("❌ Неверный формат ID группы. Пример: `/group_report -1001335359141`")
+                return
+            
+            # Получаем количество дней из аргументов или используем значение по умолчанию
+            days = 7
+            if len(context.args) > 1:
+                try:
+                    days = int(context.args[1])
+                except ValueError:
+                    await update.message.reply_text("❌ Неверный формат количества дней")
+                    return
         
         # Получаем данные группы
-        messages = self.db.get_messages_for_period(chat_id, days)
-        user_stats = self.db.get_user_activity_stats(chat_id, days)
-        mention_stats = self.db.get_mention_stats(chat_id, days)
-        task_stats = self.db.get_task_stats(chat_id, days)
+        messages = self.db.get_messages_for_period(target_chat_id, days)
+        user_stats = self.db.get_user_activity_stats(target_chat_id, days)
+        mention_stats = self.db.get_mention_stats(target_chat_id, days)
+        task_stats = self.db.get_task_stats(target_chat_id, days)
         
         if not messages:
-            await update.message.reply_text(f"❌ Нет данных для группы {chat_id} за последние {days} дней.")
+            await update.message.reply_text(f"❌ Нет данных для группы {target_chat_id} за последние {days} дней.")
             return
         
         # Анализируем данные
@@ -888,13 +924,13 @@ class CloudChatAnalyzerBot:
         report = self.report_generator.generate_daily_report(chat_data)
         
         # Получаем информацию о группе
-        chat_info = self.db.get_chat_info(chat_id)
-        group_title = chat_info.get('title', f'Группа {chat_id}') if chat_info else f'Группа {chat_id}'
+        chat_info = self.db.get_chat_info(target_chat_id)
+        group_title = chat_info.get('title', f'Группа {target_chat_id}') if chat_info else f'Группа {target_chat_id}'
         
         # Добавляем заголовок с информацией о группе
         group_info = f"📊 **ОТЧЕТ ПО ГРУППЕ**\n"
         group_info += f"📋 **{group_title}**\n"
-        group_info += f"🆔 ID: `{chat_id}`\n"
+        group_info += f"🆔 ID: `{target_chat_id}`\n"
         group_info += f"📅 Период: последние {days} дней\n\n"
         
         full_report = group_info + report
@@ -1381,13 +1417,30 @@ class CloudChatAnalyzerBot:
             activity_info = f"👥 **АКТИВНОСТЬ ПОЛЬЗОВАТЕЛЕЙ В ГРУППЕ**\n\n📋 **{group_title}**\n🆔 ID: `{chat_id}`\n📅 Период: последние 7 дней\n\n"
             
             for i, user in enumerate(user_stats[:10], 1):  # Топ 10 пользователей
-                display_name = user.get('display_name', f"Пользователь {user['user_id']}")
+                # Получаем отображаемое имя пользователя
+                display_name = user.get('display_name', '')
+                username = user.get('username', '')
+                first_name = user.get('first_name', '')
+                last_name = user.get('last_name', '')
+                
+                # Формируем красивое имя
+                if display_name and display_name != f"Пользователь {user['user_id']}":
+                    user_name = display_name
+                elif username:
+                    user_name = f"@{username}"
+                elif first_name and last_name:
+                    user_name = f"{first_name} {last_name}"
+                elif first_name:
+                    user_name = first_name
+                else:
+                    user_name = f"Пользователь {user['user_id']}"
+                
                 messages_count = user['messages_count']
                 total_time = user.get('total_time_minutes', 0)
                 
-                activity_info += f"{i}. **{display_name}**\n"
+                activity_info += f"{i}. **{user_name}**\n"
                 activity_info += f"   💬 Сообщений: {messages_count}\n"
-                activity_info += f"   ⏱ Время в чате: {total_time} мин\n\n"
+                activity_info += f"   ⏱ Время в чате: {total_time:.1f} мин\n\n"
             
             keyboard = [[InlineKeyboardButton("🔙 Назад к меню", callback_data=f"action_back_{chat_id}")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
