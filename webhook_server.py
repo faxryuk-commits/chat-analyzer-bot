@@ -204,6 +204,19 @@ class CloudChatAnalyzerBot:
         message_id = self.db.save_message(message_data)
         self.db.update_user_activity(user.id, chat_id, message.date, user_display_name)
         
+        # Сохраняем информацию о группе
+        chat_info = {
+            'chat_id': chat_id,
+            'chat_type': message.chat.type,
+            'title': message.chat.title,
+            'username': message.chat.username,
+            'first_name': message.chat.first_name,
+            'last_name': message.chat.last_name,
+            'description': getattr(message.chat, 'description', None),
+            'member_count': getattr(message.chat, 'member_count', None)
+        }
+        self.db.save_chat_info(chat_info)
+        
         # Анализируем текст сообщения
         text = message.text
         
@@ -684,15 +697,20 @@ class CloudChatAnalyzerBot:
         for i, group in enumerate(groups, 1):
             group_id = group['chat_id']
             group_title = group.get('title', f'Группа {group_id}')
+            chat_type = group.get('chat_type', 'группа')
             messages_count = group.get('messages_count', 0)
             users_count = group.get('users_count', 0)
+            member_count = group.get('member_count', 0)
             last_activity = group.get('last_activity', 'Неизвестно')
             
             groups_info += f"{i}. **{group_title}**\n"
-            groups_info += f"   ID: `{group_id}`\n"
-            groups_info += f"   Сообщений: {messages_count}\n"
-            groups_info += f"   Пользователей: {users_count}\n"
-            groups_info += f"   Последняя активность: {last_activity}\n\n"
+            groups_info += f"   📋 Тип: {chat_type}\n"
+            groups_info += f"   🆔 ID: `{group_id}`\n"
+            groups_info += f"   💬 Сообщений: {messages_count}\n"
+            groups_info += f"   👥 Активных пользователей: {users_count}\n"
+            if member_count:
+                groups_info += f"   👤 Всего участников: {member_count}\n"
+            groups_info += f"   ⏰ Последняя активность: {last_activity}\n\n"
         
         groups_info += "💡 **Команды для работы с группами:**\n"
         groups_info += "• `/group_report <ID группы>` - отчет по группе\n"
@@ -757,8 +775,14 @@ class CloudChatAnalyzerBot:
         
         report = self.report_generator.generate_daily_report(chat_data)
         
+        # Получаем информацию о группе
+        chat_info = self.db.get_chat_info(chat_id)
+        group_title = chat_info.get('title', f'Группа {chat_id}') if chat_info else f'Группа {chat_id}'
+        
         # Добавляем заголовок с информацией о группе
-        group_info = f"📊 **ОТЧЕТ ПО ГРУППЕ** `{chat_id}`\n"
+        group_info = f"📊 **ОТЧЕТ ПО ГРУППЕ**\n"
+        group_info += f"📋 **{group_title}**\n"
+        group_info += f"🆔 ID: `{chat_id}`\n"
         group_info += f"📅 Период: последние {days} дней\n\n"
         
         full_report = group_info + report
@@ -797,7 +821,13 @@ class CloudChatAnalyzerBot:
             await update.message.reply_text(f"❌ Нет данных об активности в группе {chat_id} за последние {days} дней.")
             return
         
-        activity_info = f"👥 **АКТИВНОСТЬ ПОЛЬЗОВАТЕЛЕЙ В ГРУППЕ** `{chat_id}`\n"
+        # Получаем информацию о группе
+        chat_info = self.db.get_chat_info(chat_id)
+        group_title = chat_info.get('title', f'Группа {chat_id}') if chat_info else f'Группа {chat_id}'
+        
+        activity_info = f"👥 **АКТИВНОСТЬ ПОЛЬЗОВАТЕЛЕЙ В ГРУППЕ**\n"
+        activity_info += f"📋 **{group_title}**\n"
+        activity_info += f"🆔 ID: `{chat_id}`\n"
         activity_info += f"📅 Период: последние {days} дней\n\n"
         
         for i, user in enumerate(user_stats[:10], 1):  # Топ 10 пользователей
@@ -844,7 +874,13 @@ class CloudChatAnalyzerBot:
             await update.message.reply_text(f"❌ Нет данных об упоминаниях в группе {chat_id} за последние {days} дней.")
             return
         
-        mentions_info = f"📢 **СТАТИСТИКА УПОМИНАНИЙ В ГРУППЕ** `{chat_id}`\n"
+        # Получаем информацию о группе
+        chat_info = self.db.get_chat_info(chat_id)
+        group_title = chat_info.get('title', f'Группа {chat_id}') if chat_info else f'Группа {chat_id}'
+        
+        mentions_info = f"📢 **СТАТИСТИКА УПОМИНАНИЙ В ГРУППЕ**\n"
+        mentions_info += f"📋 **{group_title}**\n"
+        mentions_info += f"🆔 ID: `{chat_id}`\n"
         mentions_info += f"📅 Период: последние {days} дней\n\n"
         
         for i, mention in enumerate(mention_stats[:10], 1):  # Топ 10 упоминаний

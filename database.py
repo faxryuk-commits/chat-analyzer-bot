@@ -118,6 +118,23 @@ class DatabaseManager:
                 )
             ''')
             
+            # Таблица информации о группах
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS chat_info (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    chat_id INTEGER UNIQUE NOT NULL,
+                    chat_type TEXT,
+                    title TEXT,
+                    username TEXT,
+                    first_name TEXT,
+                    last_name TEXT,
+                    description TEXT,
+                    member_count INTEGER,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
             # Индексы для оптимизации
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_messages_chat_date ON messages(chat_id, date)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_messages_user ON messages(user_id)')
@@ -194,6 +211,58 @@ class DatabaseManager:
             ))
             
             return cursor.lastrowid
+    
+    def save_chat_info(self, chat_data: Dict) -> int:
+        """Сохраняет или обновляет информацию о группе"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Проверяем, существует ли уже запись для этого чата
+            cursor.execute('SELECT id FROM chat_info WHERE chat_id = ?', (chat_data['chat_id'],))
+            existing = cursor.fetchone()
+            
+            if existing:
+                # Обновляем существующую запись
+                cursor.execute('''
+                    UPDATE chat_info SET
+                        chat_type = ?,
+                        title = ?,
+                        username = ?,
+                        first_name = ?,
+                        last_name = ?,
+                        description = ?,
+                        member_count = ?,
+                        updated_at = datetime('now')
+                    WHERE chat_id = ?
+                ''', (
+                    chat_data.get('chat_type'),
+                    chat_data.get('title'),
+                    chat_data.get('username'),
+                    chat_data.get('first_name'),
+                    chat_data.get('last_name'),
+                    chat_data.get('description'),
+                    chat_data.get('member_count'),
+                    chat_data['chat_id']
+                ))
+                return existing['id']
+            else:
+                # Создаем новую запись
+                cursor.execute('''
+                    INSERT INTO chat_info (
+                        chat_id, chat_type, title, username, first_name, last_name,
+                        description, member_count
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    chat_data['chat_id'],
+                    chat_data.get('chat_type'),
+                    chat_data.get('title'),
+                    chat_data.get('username'),
+                    chat_data.get('first_name'),
+                    chat_data.get('last_name'),
+                    chat_data.get('description'),
+                    chat_data.get('member_count')
+                ))
+                return cursor.lastrowid
     
     def save_task_response(self, response_data: Dict) -> int:
         """Сохраняет ответ на задачу"""
@@ -328,25 +397,61 @@ class DatabaseManager:
             
             cursor.execute('''
                 SELECT 
-                    chat_id,
+                    m.chat_id,
                     COUNT(*) as messages_count,
-                    COUNT(DISTINCT user_id) as users_count,
-                    MAX(datetime(date, 'unixepoch')) as last_activity
-                FROM messages 
-                GROUP BY chat_id
+                    COUNT(DISTINCT m.user_id) as users_count,
+                    MAX(datetime(m.date, 'unixepoch')) as last_activity,
+                    ci.title,
+                    ci.chat_type,
+                    ci.username,
+                    ci.first_name,
+                    ci.last_name,
+                    ci.member_count
+                FROM messages m
+                LEFT JOIN chat_info ci ON m.chat_id = ci.chat_id
+                GROUP BY m.chat_id
                 ORDER BY messages_count DESC
             ''')
             
             groups = []
             for row in cursor.fetchall():
+                # Определяем название группы
+                title = row['title']
+                if not title:
+                    if row['username']:
+                        title = f"@{row['username']}"
+                    elif row['first_name'] and row['last_name']:
+                        title = f"{row['first_name']} {row['last_name']}"
+                    elif row['first_name']:
+                        title = row['first_name']
+                    else:
+                        title = f"Группа {row['chat_id']}"
+                
                 groups.append({
                     'chat_id': row['chat_id'],
+                    'title': title,
+                    'chat_type': row['chat_type'],
                     'messages_count': row['messages_count'],
                     'users_count': row['users_count'],
-                    'last_activity': row['last_activity']
+                    'last_activity': row['last_activity'],
+                    'member_count': row['member_count']
                 })
             
             return groups
+    
+    def get_chat_info(self, chat_id: int) -> Optional[Dict]:
+        """Получает информацию о группе"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                SELECT * FROM chat_info WHERE chat_id = ?
+            ''', (chat_id,))
+            
+            row = cursor.fetchone()
+            if row:
+                return dict(row)
+            return None
     
     def get_task_stats(self, chat_id: int, days: int = 45) -> Dict:
         """Получает статистику задач"""
