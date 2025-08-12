@@ -33,6 +33,7 @@ class CloudChatAnalyzerBot:
         self.report_generator = ReportGenerator()
         self.message_collector = MessageCollector(BOT_TOKEN, self.db, self.text_analyzer)
         self.active_chats = set()
+        self.processed_updates = set()  # Для предотвращения дублирования
         
         # Создаем приложение
         self.application = Application.builder().token(BOT_TOKEN).build()
@@ -485,7 +486,22 @@ class CloudChatAnalyzerBot:
     async def handle_webhook(self, update_dict):
         """Обрабатывает webhook от Telegram"""
         update = Update.de_json(update_dict, self.application.bot)
-        await self.application.initialize()
+        
+        # Проверяем, не обрабатывали ли мы уже это обновление
+        update_id = update.update_id
+        if update_id in self.processed_updates:
+            logger.info(f"Пропускаем дублированное обновление: {update_id}")
+            return
+        
+        # Добавляем ID обновления в обработанные
+        self.processed_updates.add(update_id)
+        
+        # Ограничиваем размер множества обработанных обновлений
+        if len(self.processed_updates) > 1000:
+            # Удаляем старые записи
+            self.processed_updates = set(list(self.processed_updates)[-500:])
+        
+        # Обрабатываем обновление
         await self.application.process_update(update)
 
 # Создаем экземпляр бота
@@ -502,13 +518,20 @@ def webhook():
     if request.method == 'POST':
         update_dict = request.get_json()
         
+        # Логируем входящий webhook
+        logger.info(f"Получен webhook: {update_dict.get('update_id', 'unknown')}")
+        
         # Обрабатываем обновление в отдельном потоке
         def process_update():
             import asyncio
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            loop.run_until_complete(bot.handle_webhook(update_dict))
-            loop.close()
+            try:
+                loop.run_until_complete(bot.handle_webhook(update_dict))
+            except Exception as e:
+                logger.error(f"Ошибка при обработке webhook: {e}")
+            finally:
+                loop.close()
         
         thread = threading.Thread(target=process_update)
         thread.start()
