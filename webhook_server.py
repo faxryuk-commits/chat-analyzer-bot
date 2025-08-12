@@ -6,6 +6,7 @@
 import os
 import logging
 import time
+from datetime import datetime
 from flask import Flask, request, jsonify
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
@@ -174,7 +175,7 @@ class CloudChatAnalyzerBot:
 /task_complete 5 - отметить задачу с ID 5 как выполненную
         """
         
-        await update.message.reply_text(help_text, parse_mode='Markdown')
+        await update.message.reply_text(help_text)
     
     async def handle_message(self, update: Update, context):
         """Обработчик всех сообщений"""
@@ -1001,7 +1002,12 @@ bot = CloudChatAnalyzerBot()
 @app.route('/health')
 def health_check():
     """Health check для Railway"""
-    return jsonify({"status": "healthy", "bot": "running"})
+    try:
+        # Простая проверка - бот отвечает
+        return jsonify({"status": "healthy", "bot": "running", "timestamp": datetime.now().isoformat()})
+    except Exception as e:
+        logger.error(f"Health check error: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -1024,16 +1030,23 @@ def webhook():
         # Обрабатываем обновление синхронно для надежности
         try:
             import asyncio
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_closed():
+            import threading
+            
+            # Создаем новый event loop для каждого webhook
+            def process_webhook():
+                try:
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
-            except RuntimeError:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
+                    loop.run_until_complete(bot.handle_webhook(update_dict))
+                    loop.close()
+                except Exception as e:
+                    logger.error(f"Ошибка в process_webhook: {e}")
             
-            loop.run_until_complete(bot.handle_webhook(update_dict))
+            # Запускаем в отдельном потоке
+            thread = threading.Thread(target=process_webhook)
+            thread.start()
+            thread.join(timeout=10)  # Ждем максимум 10 секунд
+            
             logger.info(f"Webhook {update_id} успешно обработан")
         except Exception as e:
             logger.error(f"Ошибка при обработке webhook {update_id}: {e}")
@@ -1046,12 +1059,16 @@ def webhook():
 @app.route('/')
 def home():
     """Главная страница"""
-    return """
-    <h1>🤖 Chat Analyzer Bot</h1>
-    <p>Бот для анализа активности в рабочих чатах</p>
-    <p>Статус: <strong>Работает</strong></p>
-    <p>Версия: 1.0.0</p>
-    """
+    try:
+        return """
+        <h1>🤖 Chat Analyzer Bot</h1>
+        <p>Бот для анализа активности в рабочих чатах</p>
+        <p>Статус: <strong>Работает</strong></p>
+        <p>Версия: 1.0.0</p>
+        <p>Время: """ + datetime.now().strftime('%Y-%m-%d %H:%M:%S') + """</p>
+        """
+    except Exception as e:
+        return f"<h1>🤖 Chat Analyzer Bot</h1><p>Ошибка: {str(e)}</p>"
 
 if __name__ == '__main__':
     # Получаем порт из переменной окружения
