@@ -31,6 +31,13 @@ class ReportGenerator:
         sns.set_style("whitegrid")
         plt.style.use('seaborn-v0_8')
     
+    def _safe_format_report(self, report_lines: List[str]) -> str:
+        """Безопасно форматирует отчет без проблемных символов"""
+        report_text = "\n".join(report_lines)
+        # Убираем проблемные символы Markdown
+        report_text = report_text.replace('**', '').replace('*', '').replace('`', '')
+        return report_text
+    
     def generate_daily_report(self, chat_data: Dict) -> str:
         """Генерирует ежедневный отчет"""
         report = []
@@ -97,7 +104,7 @@ class ReportGenerator:
         if chat_data.get('total_mentions', 0) > 20:
             report.append("• Высокая активность упоминаний. Команда активно взаимодействует.")
         
-        return "\n".join(report)
+        return self._safe_format_report(report)
     
     def generate_weekly_report(self, chat_data: Dict) -> str:
         """Генерирует еженедельный отчет"""
@@ -122,7 +129,7 @@ class ReportGenerator:
             report.append(f"• Среднее время ответа: {metrics.get('avg_response_time', 0):.1f} мин")
             report.append(f"• Процент выполненных задач: {metrics.get('task_completion_rate', 0):.1f}%")
         
-        return "\n".join(report)
+        return self._safe_format_report(report)
     
     def create_user_activity_chart(self, user_data: List[Dict]) -> str:
         """Создает график активности пользователей"""

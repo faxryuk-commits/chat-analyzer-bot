@@ -123,7 +123,7 @@ class CloudChatAnalyzerBot:
 /schedule_report - настроить автоматические отчеты
         """
         
-        await update.message.reply_text(welcome_message, parse_mode='Markdown')
+        await update.message.reply_text(welcome_message)
         self.active_chats.add(chat_id)
     
     async def help_command(self, update: Update, context):
@@ -262,7 +262,7 @@ class CloudChatAnalyzerBot:
         }
         
         report = self.report_generator.generate_daily_report(chat_data)
-        await update.message.reply_text(report, parse_mode='Markdown')
+        await update.message.reply_text(report)
     
     async def show_tasks(self, update: Update, context):
         """Показывает активные задачи"""
@@ -648,10 +648,16 @@ def webhook():
         # Обрабатываем обновление синхронно для надежности
         try:
             import asyncio
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_closed():
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            
             loop.run_until_complete(bot.handle_webhook(update_dict))
-            loop.close()
             logger.info(f"Webhook {update_id} успешно обработан")
         except Exception as e:
             logger.error(f"Ошибка при обработке webhook {update_id}: {e}")
