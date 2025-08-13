@@ -99,6 +99,7 @@ class CloudChatAnalyzerBot:
         self.application.add_handler(CommandHandler("monitor_test", self.monitor_test))
         self.application.add_handler(CommandHandler("monitor_summary", self.monitor_summary))
         self.application.add_handler(CommandHandler("monitor_errors", self.monitor_errors))
+        self.application.add_handler(CommandHandler("monitor_clear", self.monitor_clear))
         self.application.add_handler(CallbackQueryHandler(self.button_callback))
         
         # Обработчик сообщений
@@ -221,6 +222,7 @@ class CloudChatAnalyzerBot:
 /monitor_test - тест уведомлений мониторинга
 /monitor_summary - сводка по мониторингу
 /monitor_errors - последние ошибки из отчетов
+/monitor_clear - очистить старые отчеты (старше 7 дней)
 
 **🎯 ПРИМЕРЫ ИСПОЛЬЗОВАНИЯ:**
 
@@ -1384,6 +1386,47 @@ class CloudChatAnalyzerBot:
             
         except Exception as e:
             await update.message.reply_text(f"❌ Ошибка при получении отчетов: {str(e)}")
+    
+    async def monitor_clear(self, update: Update, context):
+        """Очищает старые отчеты об ошибках"""
+        user_id = update.effective_user.id
+        
+        if user_id not in ADMIN_USER_IDS:
+            await update.message.reply_text("❌ У вас нет прав администратора")
+            return
+        
+        try:
+            # Проверяем наличие папки с отчетами
+            reports_dir = Path("error_reports")
+            if not reports_dir.exists():
+                await update.message.reply_text("📁 Папка с отчетами об ошибках не найдена")
+                return
+            
+            # Получаем все отчеты
+            report_files = list(reports_dir.glob("error_report_*.txt"))
+            
+            if not report_files:
+                await update.message.reply_text("📄 Отчеты об ошибках не найдены")
+                return
+            
+            # Удаляем отчеты старше 7 дней
+            from datetime import datetime, timedelta
+            cutoff_date = datetime.now() - timedelta(days=7)
+            deleted_count = 0
+            
+            for report_file in report_files:
+                file_time = datetime.fromtimestamp(report_file.stat().st_mtime)
+                if file_time < cutoff_date:
+                    report_file.unlink()
+                    deleted_count += 1
+            
+            if deleted_count > 0:
+                await update.message.reply_text(f"🗑️ Удалено {deleted_count} старых отчетов об ошибках")
+            else:
+                await update.message.reply_text("📄 Старые отчеты не найдены (все отчеты новее 7 дней)")
+            
+        except Exception as e:
+            await update.message.reply_text(f"❌ Ошибка при очистке отчетов: {str(e)}")
 
     async def button_callback(self, update: Update, context):
         """Обработчик нажатий на кнопки"""
