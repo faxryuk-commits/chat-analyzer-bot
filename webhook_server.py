@@ -44,8 +44,8 @@ class ChatAnalyzerBot:
         # Инициализация компонентов
         self.db = DatabaseManager(DATABASE_PATH)
         self.text_analyzer = TextAnalyzer()
-        self.report_generator = ReportGenerator(self.db, self.text_analyzer)
-        self.task_manager = TaskManager(self.db)
+        self.report_generator = ReportGenerator()
+        self.task_manager = TaskManager(self.db, self.text_analyzer)
         self.conversation_analyzer = ConversationAnalyzer()
         self.timezone_manager = TimezoneManager()
         self.history_collector = TelegramHistoryCollector(
@@ -221,7 +221,14 @@ class ChatAnalyzerBot:
                 return
             
             # Генерируем отчет
-            report = self.report_generator.generate_daily_report(chat_id, 7)
+            # Создаем данные для отчета
+            chat_data = {
+                'total_messages': len(messages),
+                'active_users': len(user_stats),
+                'top_users': user_stats[:5],
+                'period_days': 7
+            }
+            report = self.report_generator.generate_daily_report(chat_data)
             
             # Отправляем отчет
             await update.message.reply_text(report, parse_mode=ParseMode.MARKDOWN)
