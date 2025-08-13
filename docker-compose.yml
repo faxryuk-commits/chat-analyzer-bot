@@ -1,35 +1,14 @@
 version: '3.8'
 
 services:
-  bot:
+  webapp:
     build: .
     ports:
-      - "5000:5000"
+      - "8080:8080"
     environment:
+      - PORT=8080
       - BOT_TOKEN=${BOT_TOKEN}
       - ADMIN_USER_IDS=${ADMIN_USER_IDS}
-      - WEBHOOK_URL=${WEBHOOK_URL:-http://localhost:5000}
-      - DATABASE_PATH=/app/data/chat_analyzer.db
-      - HISTORY_DAYS=45
-      - REPORT_TIME=18:00
-      - TASK_TIMEOUT_HOURS=24
     volumes:
       - ./data:/app/data
     restart: unless-stopped
-    depends_on:
-      - postgres
-
-  postgres:
-    image: postgres:15
-    environment:
-      - POSTGRES_DB=chat_analyzer
-      - POSTGRES_USER=bot_user
-      - POSTGRES_PASSWORD=bot_password
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-    restart: unless-stopped
-
-volumes:
-  postgres_data:

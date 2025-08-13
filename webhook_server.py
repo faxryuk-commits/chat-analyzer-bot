@@ -148,7 +148,7 @@ class CloudChatAnalyzerBot:
         from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
         
         # URL веб-приложения
-        webapp_url = "http://localhost:8080"
+        webapp_url = os.environ.get("WEBAPP_URL", "http://localhost:8080")
         
         # Создаем одну кнопку для веб-приложения
         keyboard = [
@@ -227,7 +227,7 @@ class CloudChatAnalyzerBot:
         from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
         
         # URL веб-приложения
-        webapp_url = "http://localhost:8080"
+        webapp_url = os.environ.get("WEBAPP_URL", "http://localhost:8080")
         
         keyboard = [
             [InlineKeyboardButton("🌐 Открыть веб-панель управления", callback_data="open_webapp")]
@@ -859,7 +859,7 @@ class CloudChatAnalyzerBot:
         from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
         
         # URL веб-приложения
-        webapp_url = "http://localhost:8080"
+        webapp_url = os.environ.get("WEBAPP_URL", "http://localhost:8080")
         
         # Создаем одну кнопку для веб-приложения
         keyboard = [
@@ -1406,7 +1406,7 @@ class CloudChatAnalyzerBot:
         from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
         
         # URL веб-приложения (замените на ваш домен)
-        webapp_url = "http://localhost:8080"
+        webapp_url = os.environ.get("WEBAPP_URL", "http://localhost:8080")
         
         keyboard = [
             [InlineKeyboardButton("🌐 Открыть веб-панель", callback_data="open_webapp")],
