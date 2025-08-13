@@ -366,7 +366,7 @@ class CloudChatAnalyzerBot:
                 self.db.save_task(task_data)
     
     async def generate_report(self, update: Update, context):
-        """Генерирует отчет по активности"""
+        """Генерирует отчет по активности (команда /report)"""
         user_id = update.effective_user.id
         chat_id = update.effective_chat.id
         message_id = update.message.message_id
@@ -458,7 +458,7 @@ class CloudChatAnalyzerBot:
         await update.message.reply_text(message, parse_mode='Markdown')
     
     async def generate_single_group_report(self, update: Update, context, target_chat_id: int, days: int):
-        """Генерирует отчет по одной группе"""
+        """Генерирует отчет по одной группе (универсальный метод)"""
         try:
             # Получаем информацию о группе
             group_info = self.db.get_chat_info(target_chat_id)
@@ -488,10 +488,19 @@ class CloudChatAnalyzerBot:
             }
             
             report = self.report_generator.generate_daily_report(chat_data)
-            await update.message.reply_text(report)
+            
+            # Определяем, откуда был вызов (команда или кнопка)
+            if hasattr(update, 'message'):
+                await update.message.reply_text(report)
+            else:
+                await update.callback_query.edit_message_text(report)
             
         except Exception as e:
-            await update.message.reply_text(f"❌ Ошибка при генерации отчета: {str(e)}")
+            error_msg = f"❌ Ошибка при генерации отчета: {str(e)}"
+            if hasattr(update, 'message'):
+                await update.message.reply_text(error_msg)
+            else:
+                await update.callback_query.edit_message_text(error_msg)
     
     async def generate_all_groups_report(self, update: Update, context):
         """Генерирует общий отчет по всем группам"""
@@ -954,8 +963,228 @@ class CloudChatAnalyzerBot:
             await self.show_group_wordcloud_from_callback(query, context, chat_id)
         elif action == "collect":
             await self.collect_group_history_from_callback(query, context, chat_id)
+        elif action == "tasks":
+            await self.show_group_tasks_from_callback(query, context, chat_id)
+        elif action == "temperature":
+            await self.show_group_temperature_from_callback(query, context, chat_id)
         else:
             await query.edit_message_text("❌ Неизвестное действие")
+    
+    async def generate_single_group_report_from_callback(self, query, context, chat_id: int, days: int):
+        """Генерирует отчет по группе из callback"""
+        # Создаем фейковый update объект для универсального метода
+        class FakeUpdate:
+            def __init__(self, callback_query):
+                self.callback_query = callback_query
+        
+        fake_update = FakeUpdate(query)
+        await self.generate_single_group_report(fake_update, context, chat_id, days)
+    
+    async def show_group_activity_from_callback(self, query, context, chat_id: int):
+        """Показывает активность группы из callback"""
+        try:
+            user_stats = self.db.get_user_activity_stats(chat_id, 7)
+            
+            if not user_stats:
+                await query.edit_message_text("📊 Нет данных об активности пользователей")
+                return
+            
+            # Получаем название группы
+            group_info = self.db.get_chat_info(chat_id)
+            group_title = group_info.get('title', f'Группа {chat_id}') if group_info else f'Группа {chat_id}'
+            
+            activity_text = f"👥 **АКТИВНОСТЬ ПОЛЬЗОВАТЕЛЕЙ В ГРУППЕ:**\n"
+            activity_text += f"**{group_title}**\n\n"
+            
+            for i, user in enumerate(user_stats[:10], 1):
+                name = user.get('name', f"Пользователь {user['user_id']}")
+                time_spent = self.report_generator.format_time_spent(user.get('total_time_minutes', 0))
+                activity_text += f"{i}. {name}\n"
+                activity_text += f"   📝 Сообщений: {user['messages_count']}\n"
+                activity_text += f"   ⏱ Время в чате: {time_spent}\n\n"
+            
+            await query.edit_message_text(activity_text, parse_mode='Markdown')
+            
+        except Exception as e:
+            await query.edit_message_text(f"❌ Ошибка при получении активности: {str(e)}")
+    
+    async def show_group_topics_from_callback(self, query, context, chat_id: int):
+        """Показывает темы группы из callback"""
+        try:
+            messages = self.db.get_messages_for_period(chat_id, 7)
+            
+            texts = [msg['text'] for msg in messages if msg['text']]
+            topic_distribution = self.text_analyzer.get_topic_distribution(texts)
+            
+            if not topic_distribution:
+                await query.edit_message_text("🎯 Нет данных о темах обсуждения")
+                return
+            
+            # Получаем название группы
+            group_info = self.db.get_chat_info(chat_id)
+            group_title = group_info.get('title', f'Группа {chat_id}') if group_info else f'Группа {chat_id}'
+            
+            topics_text = f"🎯 **ПОПУЛЯРНЫЕ ТЕМЫ В ГРУППЕ:**\n"
+            topics_text += f"**{group_title}**\n\n"
+            
+            for topic, count in sorted(topic_distribution.items(), key=lambda x: x[1], reverse=True):
+                topics_text += f"• {topic}: {count} упоминаний\n"
+            
+            await query.edit_message_text(topics_text, parse_mode='Markdown')
+            
+        except Exception as e:
+            await query.edit_message_text(f"❌ Ошибка при получении тем: {str(e)}")
+    
+    async def show_group_wordcloud_from_callback(self, query, context, chat_id: int):
+        """Показывает облако слов группы из callback"""
+        try:
+            messages = self.db.get_messages_for_period(chat_id, 7)
+            
+            texts = [msg['text'] for msg in messages if msg['text']]
+            word_data = self.text_analyzer.generate_word_cloud_data(texts)
+            
+            if not word_data:
+                await query.edit_message_text("☁️ Недостаточно данных для создания облака слов")
+                return
+            
+            # Получаем название группы
+            group_info = self.db.get_chat_info(chat_id)
+            group_title = group_info.get('title', f'Группа {chat_id}') if group_info else f'Группа {chat_id}'
+            
+            # Формируем отчет о популярных словах
+            wordcloud_report = f"☁️ **ОБЛАКО СЛОВ В ГРУППЕ:**\n"
+            wordcloud_report += f"**{group_title}**\n\n"
+            wordcloud_report += f"📊 **Популярные слова за последние 7 дней:**\n\n"
+            
+            # Показываем топ-15 слов
+            for i, (word, count) in enumerate(word_data[:15], 1):
+                # Добавляем эмодзи в зависимости от частоты
+                if count >= 10:
+                    emoji = "🔥"
+                elif count >= 5:
+                    emoji = "⭐"
+                elif count >= 3:
+                    emoji = "💬"
+                else:
+                    emoji = "📝"
+                
+                wordcloud_report += f"{i}. {emoji} **{word}** - {count} раз\n"
+            
+            wordcloud_report += f"\n📈 **Всего уникальных слов:** {len(word_data)}"
+            wordcloud_report += f"\n💬 **Проанализировано сообщений:** {len(texts)}"
+            
+            await query.edit_message_text(wordcloud_report, parse_mode='Markdown')
+            
+        except Exception as e:
+            await query.edit_message_text(f"❌ Ошибка при создании облака слов: {str(e)}")
+    
+    async def collect_group_history_from_callback(self, query, context, chat_id: int):
+        """Собирает историю группы из callback"""
+        try:
+            # Отправляем сообщение о начале сбора
+            await query.edit_message_text("🔄 Начинаем сбор истории сообщений...")
+            
+            # Функция для обновления прогресса
+            async def update_progress(message):
+                await query.edit_message_text(f"🔄 **Сбор истории...**\n\n{message}")
+            
+            # Запускаем сбор истории с прогрессом
+            result = await self.message_collector.collect_chat_history(chat_id, 45, update_progress)
+            
+            if result.get('error'):
+                await query.edit_message_text(f"❌ Ошибка при сборе истории: {result['error']}")
+            else:
+                # Получаем название группы
+                group_info = self.db.get_chat_info(chat_id)
+                group_title = group_info.get('title', f'Группа {chat_id}') if group_info else f'Группа {chat_id}'
+                
+                # Формируем отчет о результатах
+                source_info = ""
+                if result.get('source') == 'database':
+                    source_info = " (из базы данных)"
+                elif result.get('source') == 'demo_data':
+                    source_info = " (демо-данные)"
+                
+                # Определяем статус выполнения
+                steps_completed = result.get('steps_completed', [])
+                status_emoji = "✅" if len(steps_completed) > 0 else "⚠️"
+                
+                report = f"""
+{status_emoji} **Сбор истории завершен!**
+
+📋 **Результаты:**
+• Чат: {group_title}
+• Период: {result.get('period_days', 45)} дней
+• Собрано сообщений: {result.get('messages_collected', 0)}{source_info}
+• Уникальных пользователей: {result.get('users_found', 0)}
+
+📅 **Период сбора:**
+• С: {result.get('start_date', '').strftime('%d.%m.%Y') if result.get('start_date') else 'N/A'}
+• По: {result.get('end_date', '').strftime('%d.%m.%Y') if result.get('end_date') else 'N/A'}
+
+💾 **Источник данных:**
+• {result.get('source', 'новые сообщения')}
+
+🔧 **Выполненные шаги:**
+"""
+                
+                # Добавляем выполненные шаги
+                step_descriptions = {
+                    'chat_info': '• ✅ Получена информация о чате',
+                    'database_check': '• ✅ Проверена база данных',
+                    'existing_data_analysis': '• ✅ Проанализированы существующие данные',
+                    'demo_data_creation': '• ✅ Созданы демонстрационные данные'
+                }
+                
+                for step in steps_completed:
+                    if step in step_descriptions:
+                        report += step_descriptions[step] + "\n"
+                
+                await query.edit_message_text(report, parse_mode='Markdown')
+                
+        except Exception as e:
+            await query.edit_message_text(f"❌ Ошибка при сборе истории: {str(e)}")
+    
+    async def show_group_tasks_from_callback(self, query, context, chat_id: int):
+        """Показывает задачи группы из callback"""
+        try:
+            tasks = self.db.get_pending_tasks(chat_id)
+            
+            if not tasks:
+                await query.edit_message_text("✅ Нет активных задач!")
+                return
+            
+            # Получаем название группы
+            group_info = self.db.get_chat_info(chat_id)
+            group_title = group_info.get('title', f'Группа {chat_id}') if group_info else f'Группа {chat_id}'
+            
+            task_report = f"✅ **АКТИВНЫЕ ЗАДАЧИ В ГРУППЕ:**\n"
+            task_report += f"**{group_title}**\n\n"
+            task_report += self.report_generator.generate_task_report(tasks)
+            
+            await query.edit_message_text(task_report, parse_mode='Markdown')
+            
+        except Exception as e:
+            await query.edit_message_text(f"❌ Ошибка при получении задач: {str(e)}")
+    
+    async def show_group_temperature_from_callback(self, query, context, chat_id: int):
+        """Показывает температуру группы из callback"""
+        try:
+            # Получаем название группы
+            group_info = self.db.get_chat_info(chat_id)
+            group_title = group_info.get('title', f'Группа {chat_id}') if group_info else f'Группа {chat_id}'
+            
+            # Здесь будет логика AI-анализа температуры
+            # Пока что показываем заглушку
+            temp_report = f"🌡️ **AI-АНАЛИЗ ТЕМПЕРАТУРЫ БЕСЕДЫ**\n\n"
+            temp_report += f"**Группа:** {group_title}\n\n"
+            temp_report += "🔍 Анализ в разработке...\n"
+            temp_report += "Скоро здесь будет доступен AI-анализ эмоционального климата бесед."
+            
+            await query.edit_message_text(temp_report, parse_mode='Markdown')
+            
+        except Exception as e:
+            await query.edit_message_text(f"❌ Ошибка при анализе температуры: {str(e)}")
     
     async def show_reports_menu(self, query, context):
         """Показывает меню отчетов"""
