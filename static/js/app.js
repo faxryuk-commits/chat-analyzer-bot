@@ -8,6 +8,7 @@ class ChatAnalyzerApp {
     init() {
         this.loadSystemStatus();
         this.loadRecentMessages();
+        this.loadChatsSummary();
         this.setupEventListeners();
     }
 
@@ -49,31 +50,53 @@ class ChatAnalyzerApp {
         }
     }
 
+    async loadChatsSummary() {
+        try {
+            const response = await fetch('/api/chats');
+            const data = await response.json();
+            
+            if (data.success && data.data) {
+                this.displayChatsSummary(data.data);
+            } else {
+                this.displayNoChats();
+            }
+        } catch (error) {
+            console.error('Ошибка загрузки групп:', error);
+            this.displayNoChats();
+        }
+    }
+
     displayRecentMessages(messages) {
         const container = document.getElementById('recent-messages');
         
         if (messages.length === 0) {
             container.innerHTML = `
                 <div class="text-center text-muted">
-                    <i class="fas fa-inbox fa-3x mb-3"></i>
+                    <i class="fas fa-inbox fa-2x mb-2"></i>
                     <p>Нет сообщений для отображения</p>
                 </div>
             `;
             return;
         }
 
-        const messagesHtml = messages.map(message => `
-            <div class="message-item mb-3 p-3 bg-light text-dark rounded">
-                <div class="d-flex justify-content-between align-items-start">
-                    <div class="flex-grow-1">
-                        <strong>${this.escapeHtml(message.user)}</strong>
-                        <small class="text-muted ms-2">${message.date}</small>
-                        <br>
-                        <span class="text-primary">${this.escapeHtml(message.chat)}</span>
+        const messagesHtml = messages.slice(0, 5).map(message => `
+            <div class="message-item mb-3 p-3" style="background: var(--card-bg); border-radius: 15px; border: 1px solid var(--border-color);">
+                <div class="d-flex align-items-start">
+                    <div class="user-avatar me-3" style="width: 35px; height: 35px; background: linear-gradient(135deg, #007bff, #0056b3); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 0.8rem;">
+                        ${this.escapeHtml(message.user).charAt(0).toUpperCase()}
                     </div>
-                </div>
-                <div class="mt-2">
-                    ${this.escapeHtml(message.text)}
+                    <div class="flex-grow-1">
+                        <div class="d-flex justify-content-between align-items-start mb-1">
+                            <strong>${this.escapeHtml(message.user)}</strong>
+                            <small class="text-muted">${message.date}</small>
+                        </div>
+                        <div class="chat-name mb-1">
+                            <small class="text-primary">${this.escapeHtml(message.chat)}</small>
+                        </div>
+                        <div class="message-text">
+                            ${this.escapeHtml(message.text)}
+                        </div>
+                    </div>
                 </div>
             </div>
         `).join('');
@@ -108,12 +131,69 @@ class ChatAnalyzerApp {
         setInterval(() => {
             this.loadSystemStatus();
             this.loadRecentMessages();
+            this.loadChatsSummary();
         }, 30000);
 
         // Обработка ошибок
         window.addEventListener('error', (event) => {
             console.error('Глобальная ошибка:', event.error);
         });
+    }
+
+    displayChatsSummary(chats) {
+        const container = document.getElementById('chats-summary');
+        
+        if (chats.length === 0) {
+            container.innerHTML = `
+                <div class="text-center text-muted">
+                    <i class="fas fa-comments fa-2x mb-2"></i>
+                    <p>Нет активных групп</p>
+                    <small>Добавьте бота в группу для начала работы</small>
+                </div>
+            `;
+            return;
+        }
+
+        const chatsHtml = chats.slice(0, 3).map(chat => `
+            <div class="chat-item mb-3 p-3" style="background: var(--card-bg); border-radius: 15px; border: 1px solid var(--border-color);">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div class="d-flex align-items-center">
+                        <div class="chat-icon me-3" style="width: 40px; height: 40px; background: linear-gradient(135deg, #007bff, #0056b3); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white;">
+                            <i class="fas fa-comments"></i>
+                        </div>
+                        <div>
+                            <strong>${this.escapeHtml(chat.title || `Группа ${chat.chat_id}`)}</strong>
+                            <br>
+                            <small class="text-muted">${chat.member_count || 0} участников</small>
+                        </div>
+                    </div>
+                    <div class="text-end">
+                        <small class="text-muted">${chat.chat_type || 'group'}</small>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+
+        if (chats.length > 3) {
+            chatsHtml += `
+                <div class="text-center">
+                    <small class="text-muted">И еще ${chats.length - 3} групп</small>
+                </div>
+            `;
+        }
+
+        container.innerHTML = chatsHtml;
+    }
+
+    displayNoChats() {
+        const container = document.getElementById('chats-summary');
+        container.innerHTML = `
+            <div class="text-center text-muted">
+                <i class="fas fa-comments fa-2x mb-2"></i>
+                <p>Нет активных групп</p>
+                <small>Добавьте бота в группу для начала работы</small>
+            </div>
+        `;
     }
 
     escapeHtml(text) {

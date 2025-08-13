@@ -1,4 +1,4 @@
-/* Современные стили для Chat Analyzer Bot */
+/* Современные стили для Chat Analyzer Bot - Кошелек стиль */
 
 :root {
     --primary-color: #007bff;
@@ -6,25 +6,156 @@
     --info-color: #17a2b8;
     --warning-color: #ffc107;
     --danger-color: #dc3545;
-    --dark-color: #343a40;
+    --dark-color: #1a1a1a;
     --light-color: #f8f9fa;
+    --card-bg: rgba(255, 255, 255, 0.1);
+    --border-color: rgba(255, 255, 255, 0.1);
 }
 
 body {
-    background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+    background: #0a0a0a;
     min-height: 100vh;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    color: #ffffff;
+    padding-bottom: 80px; /* Для нижней навигации */
 }
 
-/* Навигация */
-.navbar {
-    box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+/* Верхняя панель */
+.profile-avatar {
+    width: 50px;
+    height: 50px;
+    background: linear-gradient(135deg, #007bff, #0056b3);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    color: white;
+}
+
+/* Баланс карточка */
+.balance-card {
+    background: linear-gradient(135deg, #007bff, #0056b3);
+    border-radius: 20px;
+    padding: 2rem;
+    text-align: center;
+    box-shadow: 0 8px 32px rgba(0, 123, 255, 0.3);
+}
+
+.balance-amount {
+    font-size: 3rem;
+    font-weight: bold;
+    margin: 0;
+    color: white;
+}
+
+/* Кнопки действий */
+.action-buttons {
+    margin: 1rem 0;
+}
+
+.action-btn {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 15px;
+    padding: 1rem;
+    text-align: center;
+    color: white;
+    text-decoration: none;
+    display: block;
+    transition: all 0.3s ease;
     backdrop-filter: blur(10px);
 }
 
-.navbar-brand {
-    font-weight: bold;
+.action-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: translateY(-2px);
+    color: white;
+    text-decoration: none;
+}
+
+.action-icon {
+    width: 50px;
+    height: 50px;
+    background: linear-gradient(135deg, #007bff, #0056b3);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 0.5rem;
     font-size: 1.5rem;
+    color: white;
+}
+
+/* Промо баннер */
+.promo-banner {
+    background: linear-gradient(135deg, #ffd700, #ffb347);
+    border-radius: 15px;
+    padding: 1.5rem;
+    color: #333;
+    position: relative;
+    overflow: hidden;
+}
+
+.promo-badge {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 20px;
+    padding: 0.5rem 1rem;
+    font-weight: bold;
+    font-size: 0.9rem;
+}
+
+/* Секции */
+.section-title {
+    color: #ffffff;
+    font-weight: 600;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.assets-section, .recent-messages {
+    margin: 1rem 0;
+}
+
+/* Нижняя навигация */
+.bottom-nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: rgba(26, 26, 26, 0.95);
+    backdrop-filter: blur(20px);
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-around;
+    padding: 0.5rem 0;
+    z-index: 1000;
+}
+
+.nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 0.5rem;
+    color: #666;
+    cursor: pointer;
+    transition: color 0.3s ease;
+    text-decoration: none;
+}
+
+.nav-item.active {
+    color: #007bff;
+}
+
+.nav-item i {
+    font-size: 1.2rem;
+    margin-bottom: 0.25rem;
+}
+
+.nav-item span {
+    font-size: 0.7rem;
+    font-weight: 500;
 }
 
 /* Карточки */

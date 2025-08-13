@@ -47,59 +47,40 @@
     </nav>
 
     <!-- Главный контент -->
-    <div class="container mt-4">
-        <!-- Приветствие -->
+    <div class="container-fluid px-4 py-3">
+        <!-- Верхняя панель -->
         <div class="row mb-4">
             <div class="col-12">
-                <div class="card bg-primary text-white">
-                    <div class="card-body">
-                        <h1 class="card-title">
-                            <i class="fas fa-robot me-2"></i>
-                            Добро пожаловать в Chat Analyzer Bot
-                        </h1>
-                        <p class="card-text">
-                            Современная панель управления для анализа активности в Telegram группах
-                        </p>
+                <div class="d-flex justify-content-between align-items-center">
+                    <div class="d-flex align-items-center">
+                        <div class="profile-avatar me-3">
+                            <i class="fas fa-robot"></i>
+                        </div>
+                        <div>
+                            <h4 class="mb-0">Chat Analyzer Bot</h4>
+                            <small class="text-muted">Панель управления</small>
+                        </div>
+                    </div>
+                    <div class="d-flex">
+                        <button class="btn btn-outline-light btn-sm me-2">
+                            <i class="fas fa-search"></i>
+                        </button>
+                        <button class="btn btn-outline-light btn-sm">
+                            <i class="fas fa-ellipsis-v"></i>
+                        </button>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Статистика -->
+        <!-- Баланс/Статистика -->
         <div class="row mb-4">
-            <div class="col-md-3">
-                <div class="card bg-success text-white">
-                    <div class="card-body text-center">
-                        <i class="fas fa-comments fa-2x mb-2"></i>
-                        <h5 class="card-title" id="total-chats">0</h5>
-                        <p class="card-text">Групп</p>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card bg-info text-white">
-                    <div class="card-body text-center">
-                        <i class="fas fa-envelope fa-2x mb-2"></i>
-                        <h5 class="card-title" id="total-messages">0</h5>
-                        <p class="card-text">Сообщений</p>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card bg-warning text-white">
-                    <div class="card-body text-center">
-                        <i class="fas fa-users fa-2x mb-2"></i>
-                        <h5 class="card-title" id="total-users">0</h5>
-                        <p class="card-text">Пользователей</p>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card bg-danger text-white">
-                    <div class="card-body text-center">
-                        <i class="fas fa-chart-line fa-2x mb-2"></i>
-                        <h5 class="card-title" id="active-chats">0</h5>
-                        <p class="card-text">Активных чатов</p>
+            <div class="col-12">
+                <div class="balance-card">
+                    <div class="text-center">
+                        <h6 class="text-muted mb-2">ОБЩАЯ СТАТИСТИКА</h6>
+                        <h2 class="balance-amount" id="total-messages">0</h2>
+                        <p class="text-muted mb-0">сообщений</p>
                     </div>
                 </div>
             </div>
@@ -108,35 +89,71 @@
         <!-- Быстрые действия -->
         <div class="row mb-4">
             <div class="col-12">
-                <div class="card bg-dark">
-                    <div class="card-header">
-                        <h5><i class="fas fa-bolt me-2"></i>Быстрые действия</h5>
+                <div class="action-buttons">
+                    <div class="row g-3">
+                        <div class="col-3">
+                            <button class="action-btn" onclick="location.href='/chats'">
+                                <div class="action-icon">
+                                    <i class="fas fa-comments"></i>
+                                </div>
+                                <span>Группы</span>
+                            </button>
+                        </div>
+                        <div class="col-3">
+                            <button class="action-btn" onclick="location.href='/analytics'">
+                                <div class="action-icon">
+                                    <i class="fas fa-chart-bar"></i>
+                                </div>
+                                <span>Аналитика</span>
+                            </button>
+                        </div>
+                        <div class="col-3">
+                            <button class="action-btn" onclick="location.href='/dashboard'">
+                                <div class="action-icon">
+                                    <i class="fas fa-tachometer-alt"></i>
+                                </div>
+                                <span>Панель</span>
+                            </button>
+                        </div>
+                        <div class="col-3">
+                            <button class="action-btn" onclick="location.href='/settings'">
+                                <div class="action-icon">
+                                    <i class="fas fa-cog"></i>
+                                </div>
+                                <span>Настройки</span>
+                            </button>
+                        </div>
                     </div>
-                    <div class="card-body">
-                        <div class="row">
-                            <div class="col-md-3 mb-3">
-                                <a href="/chats" class="btn btn-primary w-100">
-                                    <i class="fas fa-list me-2"></i>
-                                    Просмотр групп
-                                </a>
-                            </div>
-                            <div class="col-md-3 mb-3">
-                                <a href="/analytics" class="btn btn-success w-100">
-                                    <i class="fas fa-chart-bar me-2"></i>
-                                    Аналитика
-                                </a>
-                            </div>
-                            <div class="col-md-3 mb-3">
-                                <a href="/dashboard" class="btn btn-info w-100">
-                                    <i class="fas fa-tachometer-alt me-2"></i>
-                                    Панель управления
-                                </a>
-                            </div>
-                            <div class="col-md-3 mb-3">
-                                <a href="/settings" class="btn btn-warning w-100">
-                                    <i class="fas fa-cog me-2"></i>
-                                    Настройки
-                                </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Промо баннер -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="promo-banner">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="mb-1">🚀 Новые возможности</h6>
+                            <p class="mb-0">AI-анализ температуры бесед</p>
+                        </div>
+                        <div class="promo-badge">
+                            <span>AI</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Активы/Группы -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="assets-section">
+                    <h6 class="section-title mb-3">АКТИВНЫЕ ГРУППЫ</h6>
+                    <div id="chats-summary">
+                        <div class="text-center">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Загрузка...</span>
                             </div>
                         </div>
                     </div>
@@ -147,16 +164,12 @@
         <!-- Последние сообщения -->
         <div class="row">
             <div class="col-12">
-                <div class="card bg-dark">
-                    <div class="card-header">
-                        <h5><i class="fas fa-clock me-2"></i>Последние сообщения</h5>
-                    </div>
-                    <div class="card-body">
-                        <div id="recent-messages">
-                            <div class="text-center">
-                                <div class="spinner-border text-primary" role="status">
-                                    <span class="visually-hidden">Загрузка...</span>
-                                </div>
+                <div class="recent-messages">
+                    <h6 class="section-title mb-3">ПОСЛЕДНИЕ СООБЩЕНИЯ</h6>
+                    <div id="recent-messages">
+                        <div class="text-center">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Загрузка...</span>
                             </div>
                         </div>
                     </div>
@@ -164,6 +177,26 @@
             </div>
         </div>
     </div>
+
+    <!-- Нижняя навигация -->
+    <nav class="bottom-nav">
+        <div class="nav-item active">
+            <i class="fas fa-home"></i>
+            <span>Главная</span>
+        </div>
+        <div class="nav-item" onclick="location.href='/dashboard'">
+            <i class="fas fa-chart-line"></i>
+            <span>Аналитика</span>
+        </div>
+        <div class="nav-item" onclick="location.href='/chats'">
+            <i class="fas fa-comments"></i>
+            <span>Группы</span>
+        </div>
+        <div class="nav-item" onclick="location.href='/settings'">
+            <i class="fas fa-cog"></i>
+            <span>Настройки</span>
+        </div>
+    </nav>
 
     <!-- Скрипты -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
