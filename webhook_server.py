@@ -21,6 +21,7 @@ from message_collector import MessageCollector
 from timezone_utils import timezone_manager
 from conversation_analyzer import ConversationAnalyzer
 from log_monitor import LogMonitor
+from pathlib import Path
 
 # Настройка логирования
 logging.basicConfig(
@@ -97,6 +98,7 @@ class CloudChatAnalyzerBot:
         self.application.add_handler(CommandHandler("monitor_status", self.monitor_status))
         self.application.add_handler(CommandHandler("monitor_test", self.monitor_test))
         self.application.add_handler(CommandHandler("monitor_summary", self.monitor_summary))
+        self.application.add_handler(CommandHandler("monitor_errors", self.monitor_errors))
         self.application.add_handler(CallbackQueryHandler(self.button_callback))
         
         # Обработчик сообщений
@@ -218,6 +220,7 @@ class CloudChatAnalyzerBot:
 /monitor_status - статус системы мониторинга
 /monitor_test - тест уведомлений мониторинга
 /monitor_summary - сводка по мониторингу
+/monitor_errors - последние ошибки из отчетов
 
 **🎯 ПРИМЕРЫ ИСПОЛЬЗОВАНИЯ:**
 
@@ -1322,6 +1325,65 @@ class CloudChatAnalyzerBot:
             await update.message.reply_text("📊 Сводка по мониторингу отправлена!")
         else:
             await update.message.reply_text("❌ Система мониторинга не инициализирована")
+    
+    async def monitor_errors(self, update: Update, context):
+        """Показывает последние ошибки из отчетов"""
+        user_id = update.effective_user.id
+        
+        if user_id not in ADMIN_USER_IDS:
+            await update.message.reply_text("❌ У вас нет прав администратора")
+            return
+        
+        try:
+            # Проверяем наличие папки с отчетами
+            reports_dir = Path("error_reports")
+            if not reports_dir.exists():
+                await update.message.reply_text("📁 Папка с отчетами об ошибках не найдена")
+                return
+            
+            # Получаем последние отчеты
+            report_files = list(reports_dir.glob("error_report_*.txt"))
+            report_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+            
+            if not report_files:
+                await update.message.reply_text("📄 Отчеты об ошибках не найдены")
+                return
+            
+            # Показываем последние 5 ошибок
+            errors_info = "🚨 **ПОСЛЕДНИЕ ОШИБКИ**\n\n"
+            
+            for i, report_file in enumerate(report_files[:5], 1):
+                try:
+                    with open(report_file, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                        
+                    # Извлекаем основную информацию
+                    lines = content.split('\n')
+                    error_type = "Неизвестно"
+                    error_message = "Неизвестно"
+                    timestamp = "Неизвестно"
+                    
+                    for line in lines:
+                        if "🔍 Тип:" in line:
+                            error_type = line.split(":", 1)[1].strip()
+                        elif "❌ Ошибка:" in line:
+                            error_message = line.split(":", 1)[1].strip()
+                        elif "📅 Время:" in line:
+                            timestamp = line.split(":", 1)[1].strip()
+                    
+                    errors_info += f"{i}. **{error_type}**\n"
+                    errors_info += f"   📅 {timestamp}\n"
+                    errors_info += f"   ❌ {error_message[:50]}{'...' if len(error_message) > 50 else ''}\n\n"
+                    
+                except Exception as e:
+                    errors_info += f"{i}. ❌ Ошибка чтения отчета: {str(e)}\n\n"
+            
+            errors_info += f"📊 Всего отчетов: {len(report_files)}"
+            
+            await update.message.reply_text(errors_info, parse_mode='Markdown')
+            
+        except Exception as e:
+            await update.message.reply_text(f"❌ Ошибка при получении отчетов: {str(e)}")
 
     async def button_callback(self, update: Update, context):
         """Обработчик нажатий на кнопки"""
