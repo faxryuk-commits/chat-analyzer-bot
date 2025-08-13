@@ -223,7 +223,19 @@ class CloudChatAnalyzerBot:
 Если у вас возникли проблемы, обратитесь к администратору.
         """
         
-        await update.message.reply_text(help_text)
+        # Создаем кнопку для веб-приложения
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+        
+        # URL веб-приложения
+        webapp_url = "http://localhost:5000"
+        
+        keyboard = [
+            [InlineKeyboardButton("🌐 Открыть веб-панель управления", web_app=WebAppInfo(url=webapp_url))]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(help_text, parse_mode='Markdown', reply_markup=reply_markup)
     
     async def handle_message(self, update: Update, context):
         """Обработчик всех сообщений"""
