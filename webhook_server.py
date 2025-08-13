@@ -148,11 +148,11 @@ class CloudChatAnalyzerBot:
         from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
         
         # URL веб-приложения
-        webapp_url = "http://localhost:5000"
+        webapp_url = "http://localhost:8080"
         
         # Создаем одну кнопку для веб-приложения
         keyboard = [
-            [InlineKeyboardButton("🌐 Открыть веб-панель управления", web_app=WebAppInfo(url=webapp_url))]
+            [InlineKeyboardButton("🌐 Открыть веб-панель управления", callback_data="open_webapp")]
         ]
         
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -227,10 +227,10 @@ class CloudChatAnalyzerBot:
         from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
         
         # URL веб-приложения
-        webapp_url = "http://localhost:5000"
+        webapp_url = "http://localhost:8080"
         
         keyboard = [
-            [InlineKeyboardButton("🌐 Открыть веб-панель управления", web_app=WebAppInfo(url=webapp_url))]
+            [InlineKeyboardButton("🌐 Открыть веб-панель управления", callback_data="open_webapp")]
         ]
         
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -811,6 +811,11 @@ class CloudChatAnalyzerBot:
             await query.edit_message_text("✅ Задача отмечена как выполненная!")
             return
         
+        # Обработка кнопки веб-приложения
+        if query.data == "open_webapp":
+            await self.show_webapp_info(query, context)
+            return
+        
         # Обработка других кнопок
         await query.edit_message_text("❌ Неизвестная команда")
     
@@ -854,11 +859,11 @@ class CloudChatAnalyzerBot:
         from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
         
         # URL веб-приложения
-        webapp_url = "http://localhost:5000"
+        webapp_url = "http://localhost:8080"
         
         # Создаем одну кнопку для веб-приложения
         keyboard = [
-            [InlineKeyboardButton("🌐 Открыть веб-панель управления", web_app=WebAppInfo(url=webapp_url))]
+            [InlineKeyboardButton("🌐 Открыть веб-панель управления", callback_data="open_webapp")]
         ]
         
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -1401,10 +1406,10 @@ class CloudChatAnalyzerBot:
         from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
         
         # URL веб-приложения (замените на ваш домен)
-        webapp_url = "http://localhost:5000"
+        webapp_url = "http://localhost:8080"
         
         keyboard = [
-            [InlineKeyboardButton("🌐 Открыть веб-панель", web_app=WebAppInfo(url=webapp_url))],
+            [InlineKeyboardButton("🌐 Открыть веб-панель", callback_data="open_webapp")],
             [InlineKeyboardButton("📊 Панель управления", web_app=WebAppInfo(url=f"{webapp_url}/dashboard"))],
             [InlineKeyboardButton("👥 Управление группами", web_app=WebAppInfo(url=f"{webapp_url}/chats"))],
             [InlineKeyboardButton("📈 Аналитика", web_app=WebAppInfo(url=f"{webapp_url}/analytics"))],
@@ -1431,6 +1436,49 @@ class CloudChatAnalyzerBot:
         """
         
         await query.edit_message_text(webapp_text, parse_mode='Markdown', reply_markup=reply_markup)
+    
+    async def show_webapp_info(self, query, context):
+        """Показывает информацию о веб-приложении"""
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        
+        keyboard = [
+            [InlineKeyboardButton("🔙 Назад в главное меню", callback_data="menu_main")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        webapp_info = """
+🌐 **ВЕБ-ПАНЕЛЬ УПРАВЛЕНИЯ**
+
+🚀 **Для доступа к веб-интерфейсу:**
+
+1. **Запустите веб-сервер:**
+   ```bash
+   python3 web_app.py
+   ```
+
+2. **Откройте в браузере:**
+   http://localhost:8080
+
+3. **Или используйте ngrok для HTTPS:**
+   ```bash
+   python3 start_with_ngrok.py
+   ```
+
+📱 **Доступные функции:**
+• 📊 Отчеты и аналитика
+• 👥 Активность пользователей
+• ✅ Управление задачами
+• 🎯 Анализ тем и слов
+• 🔄 Сбор данных
+• 🔧 Управление группами
+• 🔍 Мониторинг системы
+• 🌡️ AI-анализ
+
+💡 **Примечание:** Для работы WebApp в Telegram требуется HTTPS
+        """
+        
+        await query.edit_message_text(webapp_info, parse_mode='Markdown', reply_markup=reply_markup)
     
     async def admin_panel(self, update: Update, context):
         """Панель администратора"""
