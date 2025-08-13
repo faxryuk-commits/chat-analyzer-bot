@@ -124,51 +124,73 @@ class CloudChatAnalyzerBot:
         # Логируем команду
         logger.info(f"Команда /start от пользователя {user.id} в чате {chat_id}")
         
-        # Определяем тип чата
-        chat_type = "личных сообщениях" if chat_id > 0 else "группе"
+        # Команды работают только в личных сообщениях
+        if chat_id < 0:  # Это группа
+            await update.message.reply_text(
+                "🤖 **Добро пожаловать в Chat Analyzer Bot!**\n\n"
+                "Бот для анализа активности в группах и создания отчетов.\n"
+                "Для управления используйте команды в личных сообщениях с ботом.",
+                parse_mode='Markdown'
+            )
+            return
         
-        welcome_message = f"""
-🤖 **Добро пожаловать в Chat Analyzer Bot!**
+        # В личных сообщениях показываем главное меню
+        await self.show_main_menu(update, context)
+    
+    async def show_main_menu(self, update: Update, context):
+        """Показывает главное меню с категориями функций"""
+        user_id = update.effective_user.id
+        
+        if user_id not in ADMIN_USER_IDS:
+            await update.message.reply_text("❌ У вас нет прав администратора")
+            return
+        
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        
+        # Создаем кнопки для каждой категории
+        keyboard = [
+            [
+                InlineKeyboardButton("📊 Отчеты и аналитика", callback_data="menu_reports"),
+                InlineKeyboardButton("👥 Активность пользователей", callback_data="menu_activity")
+            ],
+            [
+                InlineKeyboardButton("✅ Управление задачами", callback_data="menu_tasks"),
+                InlineKeyboardButton("🎯 Анализ тем и слов", callback_data="menu_topics")
+            ],
+            [
+                InlineKeyboardButton("🔄 Сбор данных", callback_data="menu_collection"),
+                InlineKeyboardButton("🔧 Управление группами", callback_data="menu_groups")
+            ],
+            [
+                InlineKeyboardButton("🔍 Мониторинг системы", callback_data="menu_monitoring"),
+                InlineKeyboardButton("🌡️ AI-анализ", callback_data="menu_ai")
+            ],
+            [
+                InlineKeyboardButton("📋 Помощь", callback_data="menu_help"),
+                InlineKeyboardButton("⚙️ Настройки", callback_data="menu_settings")
+            ]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        welcome_text = f"""
+🤖 **ГЛАВНОЕ МЕНЮ - Chat Analyzer Bot**
 
-Привет, {user.first_name}! Я помогу вам анализировать активность в рабочих чатах.
+Привет! Выберите категорию функций:
 
-**🎯 Основные возможности:**
-📊 **Сбор и анализ данных** - автоматический сбор истории переписки за {HISTORY_DAYS} дней
-📈 **Активность пользователей** - кто сколько общается и на какие темы
-🎯 **Анализ тем** - определение популярных тем обсуждения
-✅ **Управление задачами** - отслеживание задач и их выполнения
-👥 **Статистика упоминаний** - кто кого чаще всего упоминает
-🌡️ **AI-анализ температуры** - оценка эмоционального климата бесед
-📋 **Детальные отчеты** - ежедневные и еженедельные отчеты
-
-**📱 Команды для всех пользователей:**
-/start - показать это сообщение
-/help - подробная справка по всем командам
-/report - получить отчет по активности в текущей группе
-/tasks - показать активные задачи
-/mentions - статистика упоминаний
-/activity - активность пользователей
-/topics - популярные темы обсуждения
-/wordcloud - облако слов из сообщений
-
-**🔧 Команды для администраторов (в личных сообщениях):**
-/groups - список всех групп с интерактивными кнопками
-/temperature <ID группы> - AI-анализ температуры беседы
-/status - проверить статус бота и права доступа
-/myid - показать ваш ID и права администратора
-/collect_history - собрать историю сообщений
-/daily_report - настроить ежедневные отчеты
-
-**💡 Как начать работу:**
-1. Добавьте бота в группу
-2. Используйте /collect_history для сбора данных
-3. В личных сообщениях используйте /groups для анализа
-
-**🌐 Текущий чат:** {chat_type}
+**📊 Отчеты и аналитика** - генерация отчетов по группам
+**👥 Активность пользователей** - анализ активности участников
+**✅ Управление задачами** - создание и отслеживание задач
+**🎯 Анализ тем и слов** - популярные темы и облако слов
+**🔄 Сбор данных** - сбор истории сообщений
+**🔧 Управление группами** - управление подключенными группами
+**🔍 Мониторинг системы** - статус и ошибки системы
+**🌡️ AI-анализ** - анализ температуры бесед
+**📋 Помощь** - справка по функциям
+**⚙️ Настройки** - настройки бота
         """
         
-        await update.message.reply_text(welcome_message)
-        self.active_chats.add(chat_id)
+        await update.message.reply_text(welcome_text, parse_mode='Markdown', reply_markup=reply_markup)
     
     async def help_command(self, update: Update, context):
         """Обработчик команды /help"""
@@ -357,8 +379,7 @@ class CloudChatAnalyzerBot:
         if chat_id < 0:  # Это группа
             await update.message.reply_text(
                 "📊 **Отчеты**\n\n"
-                "Для получения отчетов используйте команды в личных сообщениях с ботом.\n"
-                "Пример: `/report -1001234567890 7`",
+                "Для получения отчетов используйте команды в личных сообщениях с ботом.",
                 parse_mode='Markdown'
             )
             return
@@ -366,17 +387,21 @@ class CloudChatAnalyzerBot:
         # Логируем команду
         logger.info(f"Команда /report от пользователя {user_id} в чате {chat_id}")
         
-        # Получаем ID группы из аргументов
+        # Если нет аргументов, показываем список групп
         if not context.args:
-            await update.message.reply_text(
-                "❌ Укажите ID группы. Пример: `/report -1001234567890 7`"
-            )
+            await self.show_groups_for_report(update, context)
             return
         
+        # Если первый аргумент - "all", показываем общий отчет по всем группам
+        if context.args[0].lower() == "all":
+            await self.generate_all_groups_report(update, context)
+            return
+        
+        # Получаем ID группы из аргументов
         try:
             target_chat_id = int(context.args[0])
         except ValueError:
-            await update.message.reply_text("❌ Неверный формат ID группы. Пример: `/report -1001234567890 7`")
+            await update.message.reply_text("❌ Неверный формат ID группы. Используйте `/report` для выбора группы.")
             return
         
         # Получаем количество дней из аргументов или используем значение по умолчанию
@@ -388,30 +413,167 @@ class CloudChatAnalyzerBot:
                 await update.message.reply_text("❌ Неверный формат количества дней")
                 return
         
-        messages = self.db.get_messages_for_period(target_chat_id, days)
-        user_stats = self.db.get_user_activity_stats(target_chat_id, days)
-        mention_stats = self.db.get_mention_stats(target_chat_id, days)
-        task_stats = self.db.get_task_stats(target_chat_id, days)
+        await self.generate_single_group_report(update, context, target_chat_id, days)
+    
+    async def show_groups_for_report(self, update: Update, context):
+        """Показывает список групп для выбора отчета"""
+        user_id = update.effective_user.id
         
-        texts = [msg['text'] for msg in messages if msg['text']]
-        topic_distribution = self.text_analyzer.get_topic_distribution(texts)
-        conversation_flow = self.text_analyzer.analyze_conversation_flow(messages)
+        if user_id not in ADMIN_USER_IDS:
+            await update.message.reply_text("❌ У вас нет прав администратора")
+            return
         
-        # Анализируем активность по часам с учетом часового пояса
-        hourly_activity = timezone_manager.get_activity_hours(messages, 'Europe/Moscow')
+        # Получаем список всех групп из базы данных
+        groups = self.db.get_all_chats()
         
-        chat_data = {
-            'total_messages': len(messages),
-            'active_users': len(user_stats),
-            'total_mentions': sum(m['mention_count'] for m in mention_stats),
-            'top_users': user_stats[:5],
-            'popular_topics': sorted(topic_distribution.items(), key=lambda x: x[1], reverse=True)[:5],
-            'task_stats': task_stats,
-            'hourly_activity': hourly_activity
-        }
+        if not groups:
+            await update.message.reply_text(
+                "📊 **Нет доступных групп**\n\n"
+                "Добавьте бота в группу и используйте `/collect_history` для сбора данных.",
+                parse_mode='Markdown'
+            )
+            return
         
-        report = self.report_generator.generate_daily_report(chat_data)
-        await update.message.reply_text(report)
+        # Формируем сообщение со списком групп
+        message = "📊 **ВЫБЕРИТЕ ГРУППУ ДЛЯ ОТЧЕТА:**\n\n"
+        message += "**Доступные группы:**\n\n"
+        
+        for i, group in enumerate(groups, 1):
+            chat_id = group['chat_id']
+            title = group.get('title', f'Группа {chat_id}')
+            member_count = group.get('member_count', 'N/A')
+            
+            message += f"{i}. **{title}**\n"
+            message += f"   👥 Участников: {member_count}\n"
+            message += f"   📊 Команда: `/report {chat_id} 7`\n\n"
+        
+        message += "**Или используйте:**\n"
+        message += "• `/report all 7` - общий отчет по всем группам\n"
+        message += "• `/report all` - общий отчет за последние 7 дней\n\n"
+        message += "**Примеры:**\n"
+        message += "• `/report` - показать этот список\n"
+        message += "• `/report 1 30` - отчет по первой группе за 30 дней\n"
+        message += "• `/report all 14` - общий отчет за 14 дней"
+        
+        await update.message.reply_text(message, parse_mode='Markdown')
+    
+    async def generate_single_group_report(self, update: Update, context, target_chat_id: int, days: int):
+        """Генерирует отчет по одной группе"""
+        try:
+            # Получаем информацию о группе
+            group_info = self.db.get_chat_info(target_chat_id)
+            group_title = group_info.get('title', f'Группа {target_chat_id}') if group_info else f'Группа {target_chat_id}'
+            
+            messages = self.db.get_messages_for_period(target_chat_id, days)
+            user_stats = self.db.get_user_activity_stats(target_chat_id, days)
+            mention_stats = self.db.get_mention_stats(target_chat_id, days)
+            task_stats = self.db.get_task_stats(target_chat_id, days)
+            
+            texts = [msg['text'] for msg in messages if msg['text']]
+            topic_distribution = self.text_analyzer.get_topic_distribution(texts)
+            conversation_flow = self.text_analyzer.analyze_conversation_flow(messages)
+            
+            # Анализируем активность по часам с учетом часового пояса
+            hourly_activity = timezone_manager.get_activity_hours(messages, 'Europe/Moscow')
+            
+            chat_data = {
+                'chat_title': group_title,
+                'total_messages': len(messages),
+                'active_users': len(user_stats),
+                'total_mentions': sum(m['mention_count'] for m in mention_stats),
+                'top_users': user_stats[:5],
+                'popular_topics': sorted(topic_distribution.items(), key=lambda x: x[1], reverse=True)[:5],
+                'task_stats': task_stats,
+                'hourly_activity': hourly_activity
+            }
+            
+            report = self.report_generator.generate_daily_report(chat_data)
+            await update.message.reply_text(report)
+            
+        except Exception as e:
+            await update.message.reply_text(f"❌ Ошибка при генерации отчета: {str(e)}")
+    
+    async def generate_all_groups_report(self, update: Update, context):
+        """Генерирует общий отчет по всем группам"""
+        user_id = update.effective_user.id
+        
+        if user_id not in ADMIN_USER_IDS:
+            await update.message.reply_text("❌ У вас нет прав администратора")
+            return
+        
+        # Получаем количество дней
+        days = 7
+        if len(context.args) > 1:
+            try:
+                days = int(context.args[1])
+            except ValueError:
+                await update.message.reply_text("❌ Неверный формат количества дней")
+                return
+        
+        try:
+            # Получаем все группы
+            groups = self.db.get_all_chats()
+            
+            if not groups:
+                await update.message.reply_text("📊 Нет данных для анализа")
+                return
+            
+            # Собираем статистику по всем группам
+            total_messages = 0
+            total_users = set()
+            all_user_stats = []
+            
+            report = f"📊 **ОБЩИЙ ОТЧЕТ ПО ВСЕМ ГРУППАМ**\n\n"
+            report += f"📅 **Период:** последние {days} дней\n"
+            report += f"📋 **Анализируемые группы:** {len(groups)}\n\n"
+            
+            for group in groups:
+                chat_id = group['chat_id']
+                title = group.get('title', f'Группа {chat_id}')
+                
+                messages = self.db.get_messages_for_period(chat_id, days)
+                user_stats = self.db.get_user_activity_stats(chat_id, days)
+                
+                group_messages = len(messages)
+                group_users = len(user_stats)
+                
+                total_messages += group_messages
+                
+                # Добавляем пользователей в общий список
+                for user in user_stats:
+                    user_id = user['user_id']
+                    total_users.add(user_id)
+                    
+                    # Ищем пользователя в общем списке
+                    existing_user = next((u for u in all_user_stats if u['user_id'] == user_id), None)
+                    if existing_user:
+                        existing_user['messages_count'] += user['messages_count']
+                        existing_user['total_time_minutes'] = existing_user.get('total_time_minutes', 0) + user.get('total_time_minutes', 0)
+                    else:
+                        all_user_stats.append(user.copy())
+                
+                report += f"**{title}:**\n"
+                report += f"   💬 Сообщений: {group_messages}\n"
+                report += f"   👥 Активных пользователей: {group_users}\n\n"
+            
+            # Сортируем пользователей по активности
+            all_user_stats.sort(key=lambda x: x['messages_count'], reverse=True)
+            
+            report += f"📈 **ОБЩАЯ СТАТИСТИКА:**\n"
+            report += f"• Всего сообщений: {total_messages}\n"
+            report += f"• Уникальных пользователей: {len(total_users)}\n"
+            report += f"• Среднее сообщений на группу: {total_messages // len(groups) if groups else 0}\n\n"
+            
+            report += f"👥 **ТОП-5 САМЫХ АКТИВНЫХ ПОЛЬЗОВАТЕЛЕЙ:**\n"
+            for i, user in enumerate(all_user_stats[:5], 1):
+                name = user.get('name', f"Пользователь {user['user_id']}")
+                messages_count = user['messages_count']
+                report += f"{i}. {name} - {messages_count} сообщений\n"
+            
+            await update.message.reply_text(report, parse_mode='Markdown')
+            
+        except Exception as e:
+            await update.message.reply_text(f"❌ Ошибка при генерации общего отчета: {str(e)}")
     
     async def show_tasks(self, update: Update, context):
         """Показывает активные задачи"""
@@ -492,23 +654,21 @@ class CloudChatAnalyzerBot:
         if chat_id < 0:  # Это группа
             await update.message.reply_text(
                 "👥 **Активность пользователей**\n\n"
-                "Для просмотра активности используйте команды в личных сообщениях с ботом.\n"
-                "Пример: `/activity -1001234567890`",
+                "Для просмотра активности используйте команды в личных сообщениях с ботом.",
                 parse_mode='Markdown'
             )
             return
         
-        # Получаем ID группы из аргументов
+        # Если нет аргументов, показываем список групп
         if not context.args:
-            await update.message.reply_text(
-                "❌ Укажите ID группы. Пример: `/activity -1001234567890`"
-            )
+            await self.show_groups_for_activity(update, context)
             return
         
+        # Получаем ID группы из аргументов
         try:
             target_chat_id = int(context.args[0])
         except ValueError:
-            await update.message.reply_text("❌ Неверный формат ID группы. Пример: `/activity -1001234567890`")
+            await update.message.reply_text("❌ Неверный формат ID группы. Используйте `/activity` для выбора группы.")
             return
         
         user_stats = self.db.get_user_activity_stats(target_chat_id, 7)
@@ -517,7 +677,13 @@ class CloudChatAnalyzerBot:
             await update.message.reply_text("📊 Нет данных об активности пользователей")
             return
         
-        activity_text = "👥 **АКТИВНОСТЬ ПОЛЬЗОВАТЕЛЕЙ:**\n\n"
+        # Получаем название группы
+        group_info = self.db.get_chat_info(target_chat_id)
+        group_title = group_info.get('title', f'Группа {target_chat_id}') if group_info else f'Группа {target_chat_id}'
+        
+        activity_text = f"👥 **АКТИВНОСТЬ ПОЛЬЗОВАТЕЛЕЙ В ГРУППЕ:**\n"
+        activity_text += f"**{group_title}**\n\n"
+        
         for i, user in enumerate(user_stats[:10], 1):
             name = user.get('name', f"Пользователь {user['user_id']}")
             time_spent = self.report_generator.format_time_spent(user.get('total_time_minutes', 0))
@@ -526,6 +692,45 @@ class CloudChatAnalyzerBot:
             activity_text += f"   ⏱ Время в чате: {time_spent}\n\n"
         
         await update.message.reply_text(activity_text, parse_mode='Markdown')
+    
+    async def show_groups_for_activity(self, update: Update, context):
+        """Показывает список групп для выбора активности"""
+        user_id = update.effective_user.id
+        
+        if user_id not in ADMIN_USER_IDS:
+            await update.message.reply_text("❌ У вас нет прав администратора")
+            return
+        
+        # Получаем список всех групп из базы данных
+        groups = self.db.get_all_chats()
+        
+        if not groups:
+            await update.message.reply_text(
+                "👥 **Нет доступных групп**\n\n"
+                "Добавьте бота в группу и используйте `/collect_history` для сбора данных.",
+                parse_mode='Markdown'
+            )
+            return
+        
+        # Формируем сообщение со списком групп
+        message = "👥 **ВЫБЕРИТЕ ГРУППУ ДЛЯ ПРОСМОТРА АКТИВНОСТИ:**\n\n"
+        message += "**Доступные группы:**\n\n"
+        
+        for i, group in enumerate(groups, 1):
+            chat_id = group['chat_id']
+            title = group.get('title', f'Группа {chat_id}')
+            member_count = group.get('member_count', 'N/A')
+            
+            message += f"{i}. **{title}**\n"
+            message += f"   👥 Участников: {member_count}\n"
+            message += f"   📊 Команда: `/activity {chat_id}`\n\n"
+        
+        message += "**Примеры:**\n"
+        message += "• `/activity` - показать этот список\n"
+        message += "• `/activity 1` - активность в первой группе\n"
+        message += "• `/activity 2` - активность во второй группе"
+        
+        await update.message.reply_text(message, parse_mode='Markdown')
     
     async def show_topics(self, update: Update, context):
         """Показывает популярные темы"""
@@ -635,10 +840,387 @@ class CloudChatAnalyzerBot:
         query = update.callback_query
         await query.answer()
         
+        # Обработка меню
+        if query.data.startswith("menu_"):
+            await self.handle_menu_callback(query, context)
+            return
+        
+        # Обработка выбора групп
+        if query.data.startswith("group_"):
+            await self.handle_group_callback(query, context)
+            return
+        
+        # Обработка задач
         if query.data.startswith("complete_task_"):
             task_id = int(query.data.split("_")[2])
             self.db.mark_task_completed(task_id)
             await query.edit_message_text("✅ Задача отмечена как выполненная!")
+            return
+        
+        # Обработка других кнопок
+        await query.edit_message_text("❌ Неизвестная команда")
+    
+    async def handle_menu_callback(self, query, context):
+        """Обрабатывает нажатия на кнопки меню"""
+        menu_type = query.data.split("_")[1]
+        
+        if menu_type == "main":
+            await self.show_main_menu_from_callback(query, context)
+        elif menu_type == "reports":
+            await self.show_reports_menu(query, context)
+        elif menu_type == "activity":
+            await self.show_activity_menu(query, context)
+        elif menu_type == "tasks":
+            await self.show_tasks_menu(query, context)
+        elif menu_type == "topics":
+            await self.show_topics_menu(query, context)
+        elif menu_type == "collection":
+            await self.show_collection_menu(query, context)
+        elif menu_type == "groups":
+            await self.show_groups_menu(query, context)
+        elif menu_type == "monitoring":
+            await self.show_monitoring_menu(query, context)
+        elif menu_type == "ai":
+            await self.show_ai_menu(query, context)
+        elif menu_type == "help":
+            await self.show_help_menu(query, context)
+        elif menu_type == "settings":
+            await self.show_settings_menu(query, context)
+        else:
+            await query.edit_message_text("❌ Неизвестное меню")
+    
+    async def show_main_menu_from_callback(self, query, context):
+        """Показывает главное меню из callback"""
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        
+        # Создаем кнопки для каждой категории
+        keyboard = [
+            [
+                InlineKeyboardButton("📊 Отчеты и аналитика", callback_data="menu_reports"),
+                InlineKeyboardButton("👥 Активность пользователей", callback_data="menu_activity")
+            ],
+            [
+                InlineKeyboardButton("✅ Управление задачами", callback_data="menu_tasks"),
+                InlineKeyboardButton("🎯 Анализ тем и слов", callback_data="menu_topics")
+            ],
+            [
+                InlineKeyboardButton("🔄 Сбор данных", callback_data="menu_collection"),
+                InlineKeyboardButton("🔧 Управление группами", callback_data="menu_groups")
+            ],
+            [
+                InlineKeyboardButton("🔍 Мониторинг системы", callback_data="menu_monitoring"),
+                InlineKeyboardButton("🌡️ AI-анализ", callback_data="menu_ai")
+            ],
+            [
+                InlineKeyboardButton("📋 Помощь", callback_data="menu_help"),
+                InlineKeyboardButton("⚙️ Настройки", callback_data="menu_settings")
+            ]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        welcome_text = f"""
+🤖 **ГЛАВНОЕ МЕНЮ - Chat Analyzer Bot**
+
+Привет! Выберите категорию функций:
+
+**📊 Отчеты и аналитика** - генерация отчетов по группам
+**👥 Активность пользователей** - анализ активности участников
+**✅ Управление задачами** - создание и отслеживание задач
+**🎯 Анализ тем и слов** - популярные темы и облако слов
+**🔄 Сбор данных** - сбор истории сообщений
+**🔧 Управление группами** - управление подключенными группами
+**🔍 Мониторинг системы** - статус и ошибки системы
+**🌡️ AI-анализ** - анализ температуры бесед
+**📋 Помощь** - справка по функциям
+**⚙️ Настройки** - настройки бота
+        """
+        
+        await query.edit_message_text(welcome_text, parse_mode='Markdown', reply_markup=reply_markup)
+    
+    async def handle_group_callback(self, query, context):
+        """Обрабатывает выбор группы"""
+        group_data = query.data.split("_")[1:]
+        action = group_data[0]
+        chat_id = int(group_data[1])
+        
+        if action == "report":
+            await self.generate_single_group_report_from_callback(query, context, chat_id, 7)
+        elif action == "activity":
+            await self.show_group_activity_from_callback(query, context, chat_id)
+        elif action == "topics":
+            await self.show_group_topics_from_callback(query, context, chat_id)
+        elif action == "wordcloud":
+            await self.show_group_wordcloud_from_callback(query, context, chat_id)
+        elif action == "collect":
+            await self.collect_group_history_from_callback(query, context, chat_id)
+        else:
+            await query.edit_message_text("❌ Неизвестное действие")
+    
+    async def show_reports_menu(self, query, context):
+        """Показывает меню отчетов"""
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        
+        # Получаем список групп
+        groups = self.db.get_all_chats()
+        
+        keyboard = []
+        
+        # Кнопки для общих отчетов
+        keyboard.append([
+            InlineKeyboardButton("📊 Общий отчет по всем группам", callback_data="report_all_7")
+        ])
+        
+        # Кнопки для каждой группы
+        if groups:
+            for i, group in enumerate(groups[:5], 1):  # Показываем первые 5 групп
+                chat_id = group['chat_id']
+                title = group.get('title', f'Группа {chat_id}')[:20]  # Обрезаем длинные названия
+                keyboard.append([
+                    InlineKeyboardButton(f"📊 {title}", callback_data=f"group_report_{chat_id}")
+                ])
+        
+        # Кнопка возврата
+        keyboard.append([
+            InlineKeyboardButton("🔙 Назад в главное меню", callback_data="menu_main")
+        ])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        text = "📊 **МЕНЮ ОТЧЕТОВ**\n\nВыберите группу для генерации отчета:"
+        
+        await query.edit_message_text(text, parse_mode='Markdown', reply_markup=reply_markup)
+    
+    async def show_activity_menu(self, query, context):
+        """Показывает меню активности"""
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        
+        groups = self.db.get_all_chats()
+        
+        keyboard = []
+        
+        if groups:
+            for i, group in enumerate(groups[:5], 1):
+                chat_id = group['chat_id']
+                title = group.get('title', f'Группа {chat_id}')[:20]
+                keyboard.append([
+                    InlineKeyboardButton(f"👥 {title}", callback_data=f"group_activity_{chat_id}")
+                ])
+        
+        keyboard.append([
+            InlineKeyboardButton("🔙 Назад в главное меню", callback_data="menu_main")
+        ])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        text = "👥 **МЕНЮ АКТИВНОСТИ**\n\nВыберите группу для просмотра активности:"
+        
+        await query.edit_message_text(text, parse_mode='Markdown', reply_markup=reply_markup)
+    
+    async def show_tasks_menu(self, query, context):
+        """Показывает меню задач"""
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        
+        groups = self.db.get_all_chats()
+        
+        keyboard = []
+        
+        if groups:
+            for i, group in enumerate(groups[:5], 1):
+                chat_id = group['chat_id']
+                title = group.get('title', f'Группа {chat_id}')[:20]
+                keyboard.append([
+                    InlineKeyboardButton(f"✅ {title}", callback_data=f"group_tasks_{chat_id}")
+                ])
+        
+        keyboard.append([
+            InlineKeyboardButton("🔙 Назад в главное меню", callback_data="menu_main")
+        ])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        text = "✅ **МЕНЮ ЗАДАЧ**\n\nВыберите группу для управления задачами:"
+        
+        await query.edit_message_text(text, parse_mode='Markdown', reply_markup=reply_markup)
+    
+    async def show_topics_menu(self, query, context):
+        """Показывает меню тем и слов"""
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        
+        groups = self.db.get_all_chats()
+        
+        keyboard = []
+        
+        if groups:
+            for i, group in enumerate(groups[:5], 1):
+                chat_id = group['chat_id']
+                title = group.get('title', f'Группа {chat_id}')[:20]
+                keyboard.append([
+                    InlineKeyboardButton(f"🎯 {title} - Темы", callback_data=f"group_topics_{chat_id}"),
+                    InlineKeyboardButton(f"☁️ {title} - Слова", callback_data=f"group_wordcloud_{chat_id}")
+                ])
+        
+        keyboard.append([
+            InlineKeyboardButton("🔙 Назад в главное меню", callback_data="menu_main")
+        ])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        text = "🎯 **МЕНЮ АНАЛИЗА ТЕМ И СЛОВ**\n\nВыберите группу и тип анализа:"
+        
+        await query.edit_message_text(text, parse_mode='Markdown', reply_markup=reply_markup)
+    
+    async def show_collection_menu(self, query, context):
+        """Показывает меню сбора данных"""
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        
+        groups = self.db.get_all_chats()
+        
+        keyboard = []
+        
+        if groups:
+            for i, group in enumerate(groups[:5], 1):
+                chat_id = group['chat_id']
+                title = group.get('title', f'Группа {chat_id}')[:20]
+                keyboard.append([
+                    InlineKeyboardButton(f"🔄 {title}", callback_data=f"group_collect_{chat_id}")
+                ])
+        
+        keyboard.append([
+            InlineKeyboardButton("🔙 Назад в главное меню", callback_data="menu_main")
+        ])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        text = "🔄 **МЕНЮ СБОРА ДАННЫХ**\n\nВыберите группу для сбора истории:"
+        
+        await query.edit_message_text(text, parse_mode='Markdown', reply_markup=reply_markup)
+    
+    async def show_groups_menu(self, query, context):
+        """Показывает меню управления группами"""
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        
+        keyboard = [
+            [
+                InlineKeyboardButton("📋 Список всех групп", callback_data="groups_list"),
+                InlineKeyboardButton("📊 Статистика групп", callback_data="groups_stats")
+            ],
+            [
+                InlineKeyboardButton("🔍 Поиск группы", callback_data="groups_search"),
+                InlineKeyboardButton("⚙️ Настройки групп", callback_data="groups_settings")
+            ],
+            [
+                InlineKeyboardButton("🔙 Назад в главное меню", callback_data="menu_main")
+            ]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        text = "🔧 **МЕНЮ УПРАВЛЕНИЯ ГРУППАМИ**\n\nВыберите действие:"
+        
+        await query.edit_message_text(text, parse_mode='Markdown', reply_markup=reply_markup)
+    
+    async def show_monitoring_menu(self, query, context):
+        """Показывает меню мониторинга"""
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        
+        keyboard = [
+            [
+                InlineKeyboardButton("📊 Статус системы", callback_data="monitor_status"),
+                InlineKeyboardButton("🧪 Тест уведомлений", callback_data="monitor_test")
+            ],
+            [
+                InlineKeyboardButton("📋 Сводка", callback_data="monitor_summary"),
+                InlineKeyboardButton("❌ Последние ошибки", callback_data="monitor_errors")
+            ],
+            [
+                InlineKeyboardButton("🗑️ Очистить отчеты", callback_data="monitor_clear"),
+                InlineKeyboardButton("⚙️ Настройки мониторинга", callback_data="monitor_settings")
+            ],
+            [
+                InlineKeyboardButton("🔙 Назад в главное меню", callback_data="menu_main")
+            ]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        text = "🔍 **МЕНЮ МОНИТОРИНГА**\n\nВыберите действие:"
+        
+        await query.edit_message_text(text, parse_mode='Markdown', reply_markup=reply_markup)
+    
+    async def show_ai_menu(self, query, context):
+        """Показывает меню AI-анализа"""
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        
+        groups = self.db.get_all_chats()
+        
+        keyboard = []
+        
+        if groups:
+            for i, group in enumerate(groups[:5], 1):
+                chat_id = group['chat_id']
+                title = group.get('title', f'Группа {chat_id}')[:20]
+                keyboard.append([
+                    InlineKeyboardButton(f"🌡️ {title}", callback_data=f"group_temperature_{chat_id}")
+                ])
+        
+        keyboard.append([
+            InlineKeyboardButton("🔙 Назад в главное меню", callback_data="menu_main")
+        ])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        text = "🌡️ **МЕНЮ AI-АНАЛИЗА**\n\nВыберите группу для анализа температуры:"
+        
+        await query.edit_message_text(text, parse_mode='Markdown', reply_markup=reply_markup)
+    
+    async def show_help_menu(self, query, context):
+        """Показывает меню помощи"""
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        
+        keyboard = [
+            [
+                InlineKeyboardButton("📚 Полная справка", callback_data="help_full"),
+                InlineKeyboardButton("🎯 Примеры использования", callback_data="help_examples")
+            ],
+            [
+                InlineKeyboardButton("❓ Частые вопросы", callback_data="help_faq"),
+                InlineKeyboardButton("📞 Поддержка", callback_data="help_support")
+            ],
+            [
+                InlineKeyboardButton("🔙 Назад в главное меню", callback_data="menu_main")
+            ]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        text = "📋 **МЕНЮ ПОМОЩИ**\n\nВыберите раздел помощи:"
+        
+        await query.edit_message_text(text, parse_mode='Markdown', reply_markup=reply_markup)
+    
+    async def show_settings_menu(self, query, context):
+        """Показывает меню настроек"""
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        
+        keyboard = [
+            [
+                InlineKeyboardButton("⚙️ Основные настройки", callback_data="settings_main"),
+                InlineKeyboardButton("🔔 Уведомления", callback_data="settings_notifications")
+            ],
+            [
+                InlineKeyboardButton("📊 Отчеты", callback_data="settings_reports"),
+                InlineKeyboardButton("🔒 Безопасность", callback_data="settings_security")
+            ],
+            [
+                InlineKeyboardButton("🔙 Назад в главное меню", callback_data="menu_main")
+            ]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        text = "⚙️ **МЕНЮ НАСТРОЕК**\n\nВыберите раздел настроек:"
+        
+        await query.edit_message_text(text, parse_mode='Markdown', reply_markup=reply_markup)
     
     async def admin_panel(self, update: Update, context):
         """Панель администратора"""
@@ -677,17 +1259,16 @@ class CloudChatAnalyzerBot:
         # Логируем команду
         logger.info(f"Команда /collect_history от пользователя {user_id} в чате {chat_id}")
         
-        # Получаем ID группы из аргументов
+        # Если нет аргументов, показываем список групп
         if not context.args:
-            await update.message.reply_text(
-                "❌ Укажите ID группы. Пример: `/collect_history -1001234567890 30`"
-            )
+            await self.show_groups_for_collect(update, context)
             return
         
+        # Получаем ID группы из аргументов
         try:
             target_chat_id = int(context.args[0])
         except ValueError:
-            await update.message.reply_text("❌ Неверный формат ID группы. Пример: `/collect_history -1001234567890 30`")
+            await update.message.reply_text("❌ Неверный формат ID группы. Используйте `/collect_history` для выбора группы.")
             return
         
         # Получаем количество дней из аргументов или используем значение по умолчанию
@@ -772,6 +1353,46 @@ class CloudChatAnalyzerBot:
         except Exception as e:
             logger.error(f"Ошибка при сборе истории: {e}")
             await status_message.edit_text(f"❌ Ошибка при сборе истории: {str(e)}")
+    
+    async def show_groups_for_collect(self, update: Update, context):
+        """Показывает список групп для сбора истории"""
+        user_id = update.effective_user.id
+        
+        if user_id not in ADMIN_USER_IDS:
+            await update.message.reply_text("❌ У вас нет прав администратора")
+            return
+        
+        # Получаем список всех групп из базы данных
+        groups = self.db.get_all_chats()
+        
+        if not groups:
+            await update.message.reply_text(
+                "🔄 **Нет доступных групп**\n\n"
+                "Добавьте бота в группу для начала сбора данных.",
+                parse_mode='Markdown'
+            )
+            return
+        
+        # Формируем сообщение со списком групп
+        message = "🔄 **ВЫБЕРИТЕ ГРУППУ ДЛЯ СБОРА ИСТОРИИ:**\n\n"
+        message += "**Доступные группы:**\n\n"
+        
+        for i, group in enumerate(groups, 1):
+            chat_id = group['chat_id']
+            title = group.get('title', f'Группа {chat_id}')
+            member_count = group.get('member_count', 'N/A')
+            
+            message += f"{i}. **{title}**\n"
+            message += f"   👥 Участников: {member_count}\n"
+            message += f"   📊 Команда: `/collect_history {chat_id} 30`\n\n"
+        
+        message += "**Примеры:**\n"
+        message += "• `/collect_history` - показать этот список\n"
+        message += "• `/collect_history 1 30` - собрать историю первой группы за 30 дней\n"
+        message += "• `/collect_history 2 7` - собрать историю второй группы за 7 дней\n\n"
+        message += "**Примечание:** По умолчанию собирается история за 45 дней."
+        
+        await update.message.reply_text(message, parse_mode='Markdown')
     
     async def collect_chat_history(self, update: Update, context):
         """Собирает историю конкретного чата"""
