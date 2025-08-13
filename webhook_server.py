@@ -871,32 +871,38 @@ class CloudChatAnalyzerBot:
     
     async def handle_menu_callback(self, query, context):
         """Обрабатывает нажатия на кнопки меню"""
-        menu_type = query.data.split("_")[1]
-        
-        if menu_type == "main":
-            await self.show_main_menu_from_callback(query, context)
-        elif menu_type == "reports":
-            await self.show_reports_menu(query, context)
-        elif menu_type == "activity":
-            await self.show_activity_menu(query, context)
-        elif menu_type == "tasks":
-            await self.show_tasks_menu(query, context)
-        elif menu_type == "topics":
-            await self.show_topics_menu(query, context)
-        elif menu_type == "collection":
-            await self.show_collection_menu(query, context)
-        elif menu_type == "groups":
-            await self.show_groups_menu(query, context)
-        elif menu_type == "monitoring":
-            await self.show_monitoring_menu(query, context)
-        elif menu_type == "ai":
-            await self.show_ai_menu(query, context)
-        elif menu_type == "help":
-            await self.show_help_menu(query, context)
-        elif menu_type == "settings":
-            await self.show_settings_menu(query, context)
-        else:
-            await query.edit_message_text("❌ Неизвестное меню")
+        try:
+            menu_type = query.data.split("_")[1]
+            
+            if menu_type == "main":
+                await self.show_main_menu_from_callback(query, context)
+            elif menu_type == "reports":
+                await self.show_reports_menu(query, context)
+            elif menu_type == "activity":
+                await self.show_activity_menu(query, context)
+            elif menu_type == "tasks":
+                await self.show_tasks_menu(query, context)
+            elif menu_type == "topics":
+                await self.show_topics_menu(query, context)
+            elif menu_type == "collection":
+                await self.show_collection_menu(query, context)
+            elif menu_type == "groups":
+                await self.show_groups_menu(query, context)
+            elif menu_type == "monitoring":
+                await self.show_monitoring_menu(query, context)
+            elif menu_type == "ai":
+                await self.show_ai_menu(query, context)
+            elif menu_type == "help":
+                await self.show_help_menu(query, context)
+            elif menu_type == "settings":
+                await self.show_settings_menu(query, context)
+            elif menu_type == "webapp":
+                await self.show_webapp_menu(query, context)
+            else:
+                await query.edit_message_text("❌ Неизвестное меню")
+        except Exception as e:
+            logger.error(f"Ошибка в handle_menu_callback: {e}")
+            await query.edit_message_text(f"❌ Ошибка: {str(e)}")
     
     async def show_main_menu_from_callback(self, query, context):
         """Показывает главное меню из callback"""
@@ -1433,23 +1439,68 @@ class CloudChatAnalyzerBot:
         
         keyboard = [
             [
-                InlineKeyboardButton("⚙️ Основные настройки", callback_data="settings_main"),
-                InlineKeyboardButton("🔔 Уведомления", callback_data="settings_notifications")
+                InlineKeyboardButton("🌐 Веб-панель", callback_data="menu_webapp"),
+                InlineKeyboardButton("⚙️ Основные настройки", callback_data="settings_main")
             ],
             [
-                InlineKeyboardButton("📊 Отчеты", callback_data="settings_reports"),
-                InlineKeyboardButton("🔒 Безопасность", callback_data="settings_security")
+                InlineKeyboardButton("🔔 Уведомления", callback_data="settings_notifications"),
+                InlineKeyboardButton("📊 Отчеты", callback_data="settings_reports")
             ],
             [
+                InlineKeyboardButton("🔒 Безопасность", callback_data="settings_security"),
                 InlineKeyboardButton("🔙 Назад в главное меню", callback_data="menu_main")
             ]
         ]
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        text = "⚙️ **МЕНЮ НАСТРОЕК**\n\nВыберите раздел настроек:"
+        text = """
+⚙️ **МЕНЮ НАСТРОЕК**
+
+🌐 **Веб-панель** - современный интерфейс управления
+⚙️ **Основные настройки** - базовая конфигурация
+🔔 **Уведомления** - настройка уведомлений
+📊 **Отчеты** - параметры отчетов
+🔒 **Безопасность** - настройки безопасности
+        """
         
         await query.edit_message_text(text, parse_mode='Markdown', reply_markup=reply_markup)
+    
+    async def show_webapp_menu(self, query, context):
+        """Показывает меню веб-приложения"""
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+        
+        # URL веб-приложения (замените на ваш домен)
+        webapp_url = "http://localhost:5000"
+        
+        keyboard = [
+            [InlineKeyboardButton("🌐 Открыть веб-панель", web_app=WebAppInfo(url=webapp_url))],
+            [InlineKeyboardButton("📊 Панель управления", web_app=WebAppInfo(url=f"{webapp_url}/dashboard"))],
+            [InlineKeyboardButton("👥 Управление группами", web_app=WebAppInfo(url=f"{webapp_url}/chats"))],
+            [InlineKeyboardButton("📈 Аналитика", web_app=WebAppInfo(url=f"{webapp_url}/analytics"))],
+            [InlineKeyboardButton("🔙 Назад в настройки", callback_data="menu_settings")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        webapp_text = """
+🌐 **ВЕБ-ПАНЕЛЬ УПРАВЛЕНИЯ**
+
+🚀 **Современный интерфейс для управления ботом:**
+
+📊 **Панель управления** - общая статистика и мониторинг
+👥 **Управление группами** - просмотр и настройка групп
+📈 **Аналитика** - детальные отчеты и графики
+⚙️ **Настройки** - конфигурация бота
+
+💡 **Преимущества веб-интерфейса:**
+• Современный дизайн
+• Интерактивные графики
+• Удобное управление
+• Мобильная адаптация
+        """
+        
+        await query.edit_message_text(webapp_text, parse_mode='Markdown', reply_markup=reply_markup)
     
     async def admin_panel(self, update: Update, context):
         """Панель администратора"""
