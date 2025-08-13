@@ -175,41 +175,60 @@ class CloudChatAnalyzerBot:
         user = update.effective_user
         chat_id = update.effective_chat.id
         
-        # Определяем тип чата
-        chat_type = "личных сообщениях" if chat_id > 0 else "группе"
+        # Команды работают только в личных сообщениях
+        if chat_id < 0:  # Это группа
+            await update.message.reply_text(
+                "📚 **Справка по командам**\n\n"
+                "Для получения подробной справки и управления ботом "
+                "используйте команды в личных сообщениях с ботом.",
+                parse_mode='Markdown'
+            )
+            return
         
+        # В личных сообщениях показываем полную справку
         help_text = f"""
 📚 **ПОДРОБНАЯ СПРАВКА ПО КОМАНДАМ**
 
-**🌐 Текущий чат:** {chat_type}
+**🌐 Текущий чат:** личные сообщения
 
-**📱 ОСНОВНЫЕ КОМАНДЫ (работают везде):**
+**📱 ОСНОВНЫЕ КОМАНДЫ:**
 
 📊 **Анализ и отчеты:**
-/report [дни] - получить отчет по активности в текущей группе
-/activity - активность пользователей по дням
-/mentions - статистика упоминаний пользователей
-/topics - популярные темы обсуждения
-/wordcloud - облако слов из сообщений
+/report [ID группы] [дни] - получить отчет по активности в группе
+/activity [ID группы] - активность пользователей по дням
+/mentions [ID группы] - статистика упоминаний пользователей
+/topics [ID группы] - популярные темы обсуждения
+/wordcloud [ID группы] - облако слов из сообщений
 
 ✅ **Управление задачами:**
-/tasks - показать активные задачи
-/task_add @username описание - добавить задачу пользователю
-/task_complete ID - отметить задачу как выполненную
-/task_list - список всех задач
+/tasks [ID группы] - показать активные задачи
+/task_add [ID группы] @username описание - добавить задачу пользователю
+/task_complete [ID группы] ID - отметить задачу как выполненную
+/task_list [ID группы] - список всех задач
 
 **🔧 КОМАНДЫ ДЛЯ АДМИНИСТРАТОРОВ:**
 
-**В группах:**
-/collect_history [дни] - собрать историю сообщений (по умолчанию {HISTORY_DAYS} дней)
-/admin - панель администратора
-/myid - показать ваш ID и права доступа
-
-**В личных сообщениях:**
+**Управление группами:**
 /groups - список всех групп с интерактивными кнопками
-/temperature <ID группы> - AI-анализ температуры беседы
+/collect_history [ID группы] [дни] - собрать историю сообщений
+/group_report [ID группы] [дни] - отчет по конкретной группе
+
+**Анализ и мониторинг:**
+/temperature [ID группы] - AI-анализ температуры беседы
 /status - проверить статус бота и права доступа
 /daily_report - настроить ежедневные отчеты
+
+**🔍 КОМАНДЫ МОНИТОРИНГА:**
+/monitor_status - статус системы мониторинга
+/monitor_test - тест уведомлений мониторинга
+/monitor_summary - сводка по мониторингу
+/monitor_errors - последние ошибки из отчетов
+/monitor_clear - очистить старые отчеты (старше 7 дней)
+
+**🎯 ПРИМЕРЫ ИСПОЛЬЗОВАНИЯ:**
+/report -1001234567890 7 - отчет за 7 дней по группе
+/activity -1001234567890 - активность в группе
+/collect_history -1001234567890 30 - собрать историю за 30 дней
 
 **📋 ДЕТАЛЬНЫЕ КОМАНДЫ (в личных сообщениях):**
 /group_report <ID группы> [дни] - подробный отчет по конкретной группе
@@ -326,29 +345,53 @@ class CloudChatAnalyzerBot:
     
     async def generate_report(self, update: Update, context):
         """Генерирует отчет по активности"""
-        chat_id = update.effective_chat.id
         user_id = update.effective_user.id
+        chat_id = update.effective_chat.id
         message_id = update.message.message_id
         
         # Проверяем дублирование команды
         if self._is_duplicate_command(user_id, 'report', message_id):
             return
         
+        # Команды работают только в личных сообщениях
+        if chat_id < 0:  # Это группа
+            await update.message.reply_text(
+                "📊 **Отчеты**\n\n"
+                "Для получения отчетов используйте команды в личных сообщениях с ботом.\n"
+                "Пример: `/report -1001234567890 7`",
+                parse_mode='Markdown'
+            )
+            return
+        
         # Логируем команду
         logger.info(f"Команда /report от пользователя {user_id} в чате {chat_id}")
         
-        days = 1
-        if context.args:
+        # Получаем ID группы из аргументов
+        if not context.args:
+            await update.message.reply_text(
+                "❌ Укажите ID группы. Пример: `/report -1001234567890 7`"
+            )
+            return
+        
+        try:
+            target_chat_id = int(context.args[0])
+        except ValueError:
+            await update.message.reply_text("❌ Неверный формат ID группы. Пример: `/report -1001234567890 7`")
+            return
+        
+        # Получаем количество дней из аргументов или используем значение по умолчанию
+        days = 7
+        if len(context.args) > 1:
             try:
-                days = int(context.args[0])
+                days = int(context.args[1])
             except ValueError:
-                await update.message.reply_text("❌ Неверный формат количества дней. Используйте число.")
+                await update.message.reply_text("❌ Неверный формат количества дней")
                 return
         
-        messages = self.db.get_messages_for_period(chat_id, days)
-        user_stats = self.db.get_user_activity_stats(chat_id, days)
-        mention_stats = self.db.get_mention_stats(chat_id, days)
-        task_stats = self.db.get_task_stats(chat_id, days)
+        messages = self.db.get_messages_for_period(target_chat_id, days)
+        user_stats = self.db.get_user_activity_stats(target_chat_id, days)
+        mention_stats = self.db.get_mention_stats(target_chat_id, days)
+        task_stats = self.db.get_task_stats(target_chat_id, days)
         
         texts = [msg['text'] for msg in messages if msg['text']]
         topic_distribution = self.text_analyzer.get_topic_distribution(texts)
@@ -372,8 +415,33 @@ class CloudChatAnalyzerBot:
     
     async def show_tasks(self, update: Update, context):
         """Показывает активные задачи"""
+        user_id = update.effective_user.id
         chat_id = update.effective_chat.id
-        tasks = self.db.get_pending_tasks(chat_id)
+        
+        # Команды работают только в личных сообщениях
+        if chat_id < 0:  # Это группа
+            await update.message.reply_text(
+                "✅ **Активные задачи**\n\n"
+                "Для просмотра задач используйте команды в личных сообщениях с ботом.\n"
+                "Пример: `/tasks -1001234567890`",
+                parse_mode='Markdown'
+            )
+            return
+        
+        # Получаем ID группы из аргументов
+        if not context.args:
+            await update.message.reply_text(
+                "❌ Укажите ID группы. Пример: `/tasks -1001234567890`"
+            )
+            return
+        
+        try:
+            target_chat_id = int(context.args[0])
+        except ValueError:
+            await update.message.reply_text("❌ Неверный формат ID группы. Пример: `/tasks -1001234567890`")
+            return
+        
+        tasks = self.db.get_pending_tasks(target_chat_id)
         
         if not tasks:
             await update.message.reply_text("✅ Нет активных задач!")
@@ -384,16 +452,66 @@ class CloudChatAnalyzerBot:
     
     async def show_mentions(self, update: Update, context):
         """Показывает статистику упоминаний"""
+        user_id = update.effective_user.id
         chat_id = update.effective_chat.id
-        mentions = self.db.get_mention_stats(chat_id, 7)
+        
+        # Команды работают только в личных сообщениях
+        if chat_id < 0:  # Это группа
+            await update.message.reply_text(
+                "👥 **Статистика упоминаний**\n\n"
+                "Для просмотра статистики упоминаний используйте команды в личных сообщениях с ботом.\n"
+                "Пример: `/mentions -1001234567890`",
+                parse_mode='Markdown'
+            )
+            return
+        
+        # Получаем ID группы из аргументов
+        if not context.args:
+            await update.message.reply_text(
+                "❌ Укажите ID группы. Пример: `/mentions -1001234567890`"
+            )
+            return
+        
+        try:
+            target_chat_id = int(context.args[0])
+        except ValueError:
+            await update.message.reply_text("❌ Неверный формат ID группы. Пример: `/mentions -1001234567890`")
+            return
+        
+        mentions = self.db.get_mention_stats(target_chat_id, 7)
         
         mention_report = self.report_generator.generate_mention_report(mentions)
         await update.message.reply_text(mention_report, parse_mode='Markdown')
     
     async def show_activity(self, update: Update, context):
         """Показывает активность пользователей"""
+        user_id = update.effective_user.id
         chat_id = update.effective_chat.id
-        user_stats = self.db.get_user_activity_stats(chat_id, 7)
+        
+        # Команды работают только в личных сообщениях
+        if chat_id < 0:  # Это группа
+            await update.message.reply_text(
+                "👥 **Активность пользователей**\n\n"
+                "Для просмотра активности используйте команды в личных сообщениях с ботом.\n"
+                "Пример: `/activity -1001234567890`",
+                parse_mode='Markdown'
+            )
+            return
+        
+        # Получаем ID группы из аргументов
+        if not context.args:
+            await update.message.reply_text(
+                "❌ Укажите ID группы. Пример: `/activity -1001234567890`"
+            )
+            return
+        
+        try:
+            target_chat_id = int(context.args[0])
+        except ValueError:
+            await update.message.reply_text("❌ Неверный формат ID группы. Пример: `/activity -1001234567890`")
+            return
+        
+        user_stats = self.db.get_user_activity_stats(target_chat_id, 7)
         
         if not user_stats:
             await update.message.reply_text("📊 Нет данных об активности пользователей")
@@ -411,8 +529,33 @@ class CloudChatAnalyzerBot:
     
     async def show_topics(self, update: Update, context):
         """Показывает популярные темы"""
+        user_id = update.effective_user.id
         chat_id = update.effective_chat.id
-        messages = self.db.get_messages_for_period(chat_id, 7)
+        
+        # Команды работают только в личных сообщениях
+        if chat_id < 0:  # Это группа
+            await update.message.reply_text(
+                "🎯 **Популярные темы**\n\n"
+                "Для просмотра популярных тем используйте команды в личных сообщениях с ботом.\n"
+                "Пример: `/topics -1001234567890`",
+                parse_mode='Markdown'
+            )
+            return
+        
+        # Получаем ID группы из аргументов
+        if not context.args:
+            await update.message.reply_text(
+                "❌ Укажите ID группы. Пример: `/topics -1001234567890`"
+            )
+            return
+        
+        try:
+            target_chat_id = int(context.args[0])
+        except ValueError:
+            await update.message.reply_text("❌ Неверный формат ID группы. Пример: `/topics -1001234567890`")
+            return
+        
+        messages = self.db.get_messages_for_period(target_chat_id, 7)
         
         texts = [msg['text'] for msg in messages if msg['text']]
         topic_distribution = self.text_analyzer.get_topic_distribution(texts)
@@ -429,8 +572,33 @@ class CloudChatAnalyzerBot:
     
     async def show_wordcloud(self, update: Update, context):
         """Показывает облако слов"""
+        user_id = update.effective_user.id
         chat_id = update.effective_chat.id
-        messages = self.db.get_messages_for_period(chat_id, 7)
+        
+        # Команды работают только в личных сообщениях
+        if chat_id < 0:  # Это группа
+            await update.message.reply_text(
+                "☁️ **Облако слов**\n\n"
+                "Для просмотра облака слов используйте команды в личных сообщениях с ботом.\n"
+                "Пример: `/wordcloud -1001234567890`",
+                parse_mode='Markdown'
+            )
+            return
+        
+        # Получаем ID группы из аргументов
+        if not context.args:
+            await update.message.reply_text(
+                "❌ Укажите ID группы. Пример: `/wordcloud -1001234567890`"
+            )
+            return
+        
+        try:
+            target_chat_id = int(context.args[0])
+        except ValueError:
+            await update.message.reply_text("❌ Неверный формат ID группы. Пример: `/wordcloud -1001234567890`")
+            return
+        
+        messages = self.db.get_messages_for_period(target_chat_id, 7)
         
         texts = [msg['text'] for msg in messages if msg['text']]
         word_data = self.text_analyzer.generate_word_cloud_data(texts)
@@ -496,28 +664,51 @@ class CloudChatAnalyzerBot:
             await update.message.reply_text("❌ У вас нет прав администратора")
             return
         
+        # Команды работают только в личных сообщениях
+        if chat_id < 0:  # Это группа
+            await update.message.reply_text(
+                "🔄 **Сбор истории**\n\n"
+                "Для сбора истории сообщений используйте команды в личных сообщениях с ботом.\n"
+                "Пример: `/collect_history -1001234567890 30`",
+                parse_mode='Markdown'
+            )
+            return
+        
         # Логируем команду
         logger.info(f"Команда /collect_history от пользователя {user_id} в чате {chat_id}")
+        
+        # Получаем ID группы из аргументов
+        if not context.args:
+            await update.message.reply_text(
+                "❌ Укажите ID группы. Пример: `/collect_history -1001234567890 30`"
+            )
+            return
+        
+        try:
+            target_chat_id = int(context.args[0])
+        except ValueError:
+            await update.message.reply_text("❌ Неверный формат ID группы. Пример: `/collect_history -1001234567890 30`")
+            return
+        
+        # Получаем количество дней из аргументов или используем значение по умолчанию
+        days = HISTORY_DAYS
+        if len(context.args) > 1:
+            try:
+                days = int(context.args[1])
+            except ValueError:
+                await update.message.reply_text("❌ Неверный формат количества дней. Используйте число.")
+                return
         
         # Отправляем сообщение о начале сбора
         status_message = await update.message.reply_text("🔄 Начинаем сбор истории сообщений...")
         
         try:
-            # Получаем количество дней из аргументов или используем значение по умолчанию
-            days = HISTORY_DAYS
-            if context.args:
-                try:
-                    days = int(context.args[0])
-                except ValueError:
-                    await status_message.edit_text("❌ Неверный формат количества дней. Используйте число.")
-                    return
-            
             # Функция для обновления прогресса
             async def update_progress(message):
                 await status_message.edit_text(f"🔄 **Сбор истории...**\n\n{message}")
             
             # Запускаем сбор истории с прогрессом
-            result = await self.message_collector.collect_chat_history(chat_id, days, update_progress)
+            result = await self.message_collector.collect_chat_history(target_chat_id, days, update_progress)
             
             if result.get('error'):
                 await status_message.edit_text(f"❌ Ошибка при сборе истории: {result['error']}")
@@ -537,7 +728,7 @@ class CloudChatAnalyzerBot:
 {status_emoji} **Сбор истории завершен!**
 
 📋 **Результаты:**
-• Чат: {result.get('chat_title', f'ID: {chat_id}')}
+• Чат: {result.get('chat_title', f'ID: {target_chat_id}')}
 • Период: {result.get('period_days', days)} дней
 • Собрано сообщений: {result.get('messages_collected', 0)}{source_info}
 • Уникальных пользователей: {result.get('users_found', 0)}
