@@ -43,7 +43,11 @@ class CloudChatAnalyzerBot:
         self.last_commands = {}  # Для отслеживания последних команд пользователей
         
         # Инициализируем мониторинг логов
-        self.log_monitor = LogMonitor(log_file="bot.log")
+        self.log_monitor = LogMonitor(
+            log_file="bot.log",
+            bot_token=BOT_TOKEN,
+            admin_ids=ADMIN_USER_IDS
+        )
         self.monitor_thread = threading.Thread(target=self._start_log_monitoring, daemon=True)
         self.monitor_thread.start()
         
@@ -90,6 +94,9 @@ class CloudChatAnalyzerBot:
         self.application.add_handler(CommandHandler("temperature", self.analyze_temperature))
         self.application.add_handler(CommandHandler("status", self.check_status))
         self.application.add_handler(CommandHandler("debug_groups", self.debug_groups))
+        self.application.add_handler(CommandHandler("monitor_status", self.monitor_status))
+        self.application.add_handler(CommandHandler("monitor_test", self.monitor_test))
+        self.application.add_handler(CommandHandler("monitor_summary", self.monitor_summary))
         self.application.add_handler(CallbackQueryHandler(self.button_callback))
         
         # Обработчик сообщений
@@ -206,6 +213,11 @@ class CloudChatAnalyzerBot:
 /group_activity <ID группы> [дни] - активность пользователей в группе
 /group_mentions <ID группы> [дни] - статистика упоминаний в группе
 /debug_groups - отладочная информация о группах
+
+🔍 **КОМАНДЫ МОНИТОРИНГА:**
+/monitor_status - статус системы мониторинга
+/monitor_test - тест уведомлений мониторинга
+/monitor_summary - сводка по мониторингу
 
 **🎯 ПРИМЕРЫ ИСПОЛЬЗОВАНИЯ:**
 
@@ -733,6 +745,14 @@ class CloudChatAnalyzerBot:
             logger.info(f"Обрабатываем обновление {update.update_id}: пользователь {user.id} в чате {chat.id}")
         
         try:
+            # Создаем новый event loop для каждого webhook
+            import asyncio
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            
             # Обрабатываем обновление
             await self.application.process_update(update)
             logger.info(f"Обновление {update.update_id} успешно обработано")
@@ -1228,6 +1248,80 @@ class CloudChatAnalyzerBot:
             
         except Exception as e:
             await update.message.reply_text(f"❌ Ошибка при получении групп: {str(e)}")
+    
+    async def monitor_status(self, update: Update, context):
+        """Показывает статус системы мониторинга"""
+        user_id = update.effective_user.id
+        
+        if user_id not in ADMIN_USER_IDS:
+            await update.message.reply_text("❌ У вас нет прав администратора")
+            return
+        
+        # Проверяем статус мониторинга
+        monitor_active = hasattr(self, 'log_monitor') and self.log_monitor is not None
+        
+        status_info = "🔍 **СТАТУС СИСТЕМЫ МОНИТОРИНГА**\n\n"
+        
+        if monitor_active:
+            status_info += "✅ **Мониторинг активен**\n"
+            status_info += f"📊 Найдено ошибок: {getattr(self.log_monitor, 'error_counter', 0)}\n"
+            status_info += f"🔧 Исправлено ошибок: {getattr(self.log_monitor, 'fix_counter', 0)}\n"
+        else:
+            status_info += "❌ **Мониторинг неактивен**\n"
+        
+        # Проверяем настройки
+        status_info += f"\n⚙️ **Настройки:**\n"
+        status_info += f"📁 Лог файл: bot.log\n"
+        status_info += f"🔔 Уведомления в Telegram: {'✅' if getattr(self.log_monitor, 'bot_token', None) else '❌'}\n"
+        status_info += f"🔄 Отправка в Cursor: {'✅' if getattr(self.log_monitor, 'cursor_api_url', None) else '❌'}\n"
+        
+        # Проверяем наличие лог файла
+        import os
+        log_exists = os.path.exists("bot.log")
+        status_info += f"📄 Лог файл существует: {'✅' if log_exists else '❌'}\n"
+        
+        if log_exists:
+            log_size = os.path.getsize("bot.log")
+            status_info += f"📏 Размер лог файла: {log_size} байт\n"
+        
+        await update.message.reply_text(status_info, parse_mode='Markdown')
+    
+    async def monitor_test(self, update: Update, context):
+        """Тестирует систему мониторинга"""
+        user_id = update.effective_user.id
+        
+        if user_id not in ADMIN_USER_IDS:
+            await update.message.reply_text("❌ У вас нет прав администратора")
+            return
+        
+        # Создаем тестовую ошибку
+        test_error_data = {
+            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'error_type': 'Test Error',
+            'main_error': 'Тестовая ошибка для проверки системы мониторинга',
+            'log_file': 'bot.log'
+        }
+        
+        # Отправляем тестовое уведомление
+        if hasattr(self, 'log_monitor') and self.log_monitor:
+            self.log_monitor.send_error_notification(test_error_data)
+            await update.message.reply_text("🧪 Тестовое уведомление отправлено! Проверьте, получили ли вы сообщение.")
+        else:
+            await update.message.reply_text("❌ Система мониторинга не инициализирована")
+    
+    async def monitor_summary(self, update: Update, context):
+        """Показывает сводку по мониторингу"""
+        user_id = update.effective_user.id
+        
+        if user_id not in ADMIN_USER_IDS:
+            await update.message.reply_text("❌ У вас нет прав администратора")
+            return
+        
+        if hasattr(self, 'log_monitor') and self.log_monitor:
+            self.log_monitor.send_daily_summary()
+            await update.message.reply_text("📊 Сводка по мониторингу отправлена!")
+        else:
+            await update.message.reply_text("❌ Система мониторинга не инициализирована")
 
     async def button_callback(self, update: Update, context):
         """Обработчик нажатий на кнопки"""

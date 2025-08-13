@@ -102,6 +102,8 @@ MONITOR_CONFIG = {
     # Настройки уведомлений
     "notifications": {
         "telegram_admin_notification": True,
+        "telegram_error_reports": True,
+        "telegram_fix_reports": True,
         "email_notification": False,
         "discord_webhook": False
     },

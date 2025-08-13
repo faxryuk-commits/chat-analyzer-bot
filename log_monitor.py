@@ -12,19 +12,23 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 import re
 from pathlib import Path
-from monitor_config import get_error_patterns, get_ignored_patterns, get_cursor_files, get_error_priority
+from monitor_config import get_error_patterns, get_ignored_patterns, get_cursor_files, get_error_priority, get_config
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class LogMonitor:
-    def __init__(self, log_file: str = "bot.log", cursor_api_url: str = None):
+    def __init__(self, log_file: str = "bot.log", cursor_api_url: str = None, bot_token: str = None, admin_ids: List[int] = None):
         self.log_file = log_file
         self.cursor_api_url = cursor_api_url or os.getenv('CURSOR_API_URL')
+        self.bot_token = bot_token or os.getenv('BOT_TOKEN')
+        self.admin_ids = admin_ids or [int(id) for id in os.getenv('ADMIN_USER_IDS', '').split(',') if id]
         self.last_position = 0
         self.error_patterns = get_error_patterns()
         self.ignored_patterns = get_ignored_patterns()
+        self.error_counter = 0
+        self.fix_counter = 0
         
     def read_new_logs(self) -> List[str]:
         """Читает новые записи из лог файла"""
@@ -118,6 +122,15 @@ class LogMonitor:
             
             if response.status_code == 200:
                 logger.info(f"Ошибка отправлена в Cursor: {error_data['error_type']}")
+                
+                # Пытаемся получить ответ от Cursor с исправлением
+                try:
+                    response_data = response.json()
+                    if response_data.get('fix_applied'):
+                        self.handle_cursor_fix(response_data, error_data)
+                except:
+                    pass
+                
                 return True
             else:
                 logger.error(f"Ошибка отправки в Cursor: {response.status_code}")
@@ -126,6 +139,30 @@ class LogMonitor:
         except Exception as e:
             logger.error(f"Ошибка отправки в Cursor: {e}")
             return False
+    
+    def handle_cursor_fix(self, cursor_response: Dict, original_error: Dict):
+        """Обрабатывает ответ от Cursor с исправлением"""
+        try:
+            fix_data = {
+                'fix_description': cursor_response.get('fix_description', 'Автоматическое исправление'),
+                'file': cursor_response.get('file', 'Неизвестно'),
+                'changes': cursor_response.get('changes', []),
+                'original_error': original_error.get('main_error', 'Неизвестно')
+            }
+            
+            # Отправляем уведомление об исправлении
+            self.send_fix_notification(fix_data)
+            
+            logger.info(f"Исправление от Cursor обработано: {fix_data['fix_description']}")
+            
+        except Exception as e:
+            logger.error(f"Ошибка обработки исправления от Cursor: {e}")
+    
+    def check_cursor_fixes(self):
+        """Проверяет наличие исправлений от Cursor (имитация)"""
+        # В реальной реализации здесь будет проверка API Cursor
+        # Пока что это заглушка для демонстрации
+        pass
     
     def create_error_report(self, error_data: Dict) -> str:
         """Создает отчет об ошибке для локального сохранения"""
@@ -171,10 +208,106 @@ class LogMonitor:
         except Exception as e:
             logger.error(f"Ошибка сохранения отчета: {e}")
     
+    def send_telegram_notification(self, message: str, error_data: Dict = None):
+        """Отправляет уведомление в Telegram"""
+        if not self.bot_token or not self.admin_ids:
+            logger.warning("BOT_TOKEN или ADMIN_USER_IDS не настроены для уведомлений")
+            return False
+        
+        try:
+            for admin_id in self.admin_ids:
+                url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
+                
+                # Формируем сообщение с эмодзи и форматированием
+                formatted_message = message
+                if error_data:
+                    formatted_message += f"\n\n🔍 **Детали:**\n"
+                    formatted_message += f"📅 Время: {error_data.get('timestamp', 'Неизвестно')}\n"
+                    formatted_message += f"📁 Файл: {error_data.get('log_file', 'Неизвестно')}\n"
+                    formatted_message += f"🎯 Тип: {error_data.get('error_type', 'Неизвестно')}"
+                
+                payload = {
+                    "chat_id": admin_id,
+                    "text": formatted_message,
+                    "parse_mode": "Markdown"
+                }
+                
+                response = requests.post(url, json=payload, timeout=10)
+                
+                if response.status_code == 200:
+                    logger.info(f"Уведомление отправлено администратору {admin_id}")
+                else:
+                    logger.error(f"Ошибка отправки уведомления администратору {admin_id}: {response.status_code}")
+                    
+        except Exception as e:
+            logger.error(f"Ошибка отправки уведомления в Telegram: {e}")
+            return False
+        
+        return True
+    
+    def send_error_notification(self, error_data: Dict):
+        """Отправляет уведомление об ошибке"""
+        if not get_config('notifications.telegram_error_reports', True):
+            return
+        
+        self.error_counter += 1
+        
+        # Формируем сообщение об ошибке
+        error_emoji = "🚨" if error_data.get('error_type') in ['Critical', 'Exception'] else "⚠️"
+        
+        message = f"{error_emoji} **ОБНАРУЖЕНА ОШИБКА #{self.error_counter}**\n\n"
+        message += f"❌ **Ошибка:** {error_data.get('main_error', 'Неизвестно')}\n"
+        message += f"📊 **Статистика:** Всего ошибок сегодня: {self.error_counter}\n\n"
+        message += f"🔄 **Статус:** Отправлено в Cursor для автоматического исправления\n"
+        message += f"⏰ **Время:** {datetime.now().strftime('%H:%M:%S')}"
+        
+        self.send_telegram_notification(message, error_data)
+    
+    def send_fix_notification(self, fix_data: Dict):
+        """Отправляет уведомление об исправлении ошибки"""
+        if not get_config('notifications.telegram_fix_reports', True):
+            return
+        
+        self.fix_counter += 1
+        
+        # Формируем сообщение об исправлении
+        message = f"✅ **ОШИБКА ИСПРАВЛЕНА #{self.fix_counter}**\n\n"
+        message += f"🔧 **Исправление:** {fix_data.get('fix_description', 'Автоматическое исправление')}\n"
+        message += f"📁 **Файл:** {fix_data.get('file', 'Неизвестно')}\n"
+        message += f"📊 **Статистика:** Исправлено ошибок сегодня: {self.fix_counter}\n\n"
+        message += f"🎯 **Статус:** Ошибка успешно устранена\n"
+        message += f"⏰ **Время:** {datetime.now().strftime('%H:%M:%S')}"
+        
+        self.send_telegram_notification(message)
+    
+    def send_daily_summary(self):
+        """Отправляет ежедневную сводку по ошибкам"""
+        if not get_config('notifications.telegram_admin_notification', True):
+            return
+        
+        message = f"📊 **ЕЖЕДНЕВНАЯ СВОДКА ПО ОШИБКАМ**\n\n"
+        message += f"📅 Дата: {datetime.now().strftime('%d.%m.%Y')}\n"
+        message += f"🚨 Найдено ошибок: {self.error_counter}\n"
+        message += f"✅ Исправлено ошибок: {self.fix_counter}\n"
+        message += f"📈 Эффективность: {(self.fix_counter / max(self.error_counter, 1) * 100):.1f}%\n\n"
+        
+        if self.error_counter > 0:
+            message += f"🎯 **Рекомендации:**\n"
+            if self.fix_counter < self.error_counter:
+                message += f"• {self.error_counter - self.fix_counter} ошибок требуют внимания\n"
+            else:
+                message += f"• Все ошибки успешно исправлены! 🎉\n"
+        else:
+            message += f"🎉 **Отличная работа! Ошибок не обнаружено!**"
+        
+        self.send_telegram_notification(message)
+    
     def monitor(self, interval: int = 30):
         """Основной цикл мониторинга"""
         logger.info(f"Запуск мониторинга логов: {self.log_file}")
         logger.info(f"Интервал проверки: {interval} секунд")
+        
+        last_summary_date = datetime.now().date()
         
         while True:
             try:
@@ -195,17 +328,31 @@ class LogMonitor:
                         # Сохраняем локально
                         self.save_error_report(error_data)
                         
+                        # Отправляем уведомление в Telegram
+                        self.send_error_notification(error_data)
+                        
                         # Отправляем в Cursor
                         self.send_to_cursor(error_data)
                         
                         # Логируем
                         logger.warning(f"Найдена ошибка: {error_data['error_type']} - {error_data['main_error']}")
                 
+                # Проверяем, нужно ли отправить ежедневную сводку
+                current_date = datetime.now().date()
+                if current_date != last_summary_date:
+                    # Сбрасываем счетчики и отправляем сводку
+                    self.send_daily_summary()
+                    self.error_counter = 0
+                    self.fix_counter = 0
+                    last_summary_date = current_date
+                
                 # Ждем следующей проверки
                 time.sleep(interval)
                 
             except KeyboardInterrupt:
                 logger.info("Мониторинг остановлен пользователем")
+                # Отправляем финальную сводку
+                self.send_daily_summary()
                 break
             except Exception as e:
                 logger.error(f"Ошибка в цикле мониторинга: {e}")
