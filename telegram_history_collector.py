@@ -21,7 +21,7 @@ class TelegramHistoryCollector:
         self.text_analyzer = text_analyzer
         self.bot = Bot(token=bot_token)
         
-        async def collect_real_chat_history(self, chat_id: int, days: int = 45, progress_callback=None) -> Dict:
+    async def collect_real_chat_history(self, chat_id: int, days: int = 45, progress_callback=None) -> Dict:
         """Собирает реальную историю сообщений из чата с прогрессом"""
         
         # Вычисляем дату начала сбора

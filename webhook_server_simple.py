@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Chat Analyzer Bot - Webhook Server
-Улучшенная версия с исправлением event loop проблем
+Chat Analyzer Bot - Упрощенный Webhook Server
+Исправлены проблемы с event loop и синтаксические ошибки
 """
 
 import os
@@ -9,8 +9,8 @@ import json
 import logging
 import asyncio
 import threading
-from datetime import datetime, timedelta
-from typing import Dict, Set, Optional
+from datetime import datetime
+from typing import Dict, Set
 from flask import Flask, request, jsonify
 from telegram import Update, Bot
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
@@ -27,14 +27,11 @@ from timezone_utils import TimezoneManager
 from telegram_history_collector import TelegramHistoryCollector
 
 # Настройка логирования
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-class ChatAnalyzerBot:
-    """Улучшенный класс бота с исправленными проблемами event loop"""
+class SimpleChatBot:
+    """Упрощенный класс бота с исправленными проблемами"""
     
     def __init__(self):
         """Инициализация бота"""
@@ -48,54 +45,39 @@ class ChatAnalyzerBot:
         self.task_manager = TaskManager(self.db)
         self.conversation_analyzer = ConversationAnalyzer()
         self.timezone_manager = TimezoneManager()
-        self.history_collector = TelegramHistoryCollector(
-            self.db, self.text_analyzer, self.bot_token
-        )
+        self.history_collector = TelegramHistoryCollector(self.db, self.text_analyzer, self.bot_token)
         
         # Инициализация Telegram приложения
         self.application = Application.builder().token(self.bot_token).build()
         
-        # Настройка обработчиков команд
+        # Настройка обработчиков
         self._setup_handlers()
         
         # Кэш для предотвращения дублирования
         self.processed_updates: Set[int] = set()
-        self.last_commands: Dict[str, float] = {}
         
         logger.info("Бот успешно инициализирован")
     
     def _setup_handlers(self):
         """Настройка обработчиков команд"""
-        # Основные команды
         self.application.add_handler(CommandHandler("start", self.start_command))
         self.application.add_handler(CommandHandler("help", self.help_command))
         self.application.add_handler(CommandHandler("myid", self.myid_command))
-        self.application.add_handler(CommandHandler("status", self.status_command))
-        
-        # Команды отчетов
         self.application.add_handler(CommandHandler("report", self.report_command))
         self.application.add_handler(CommandHandler("activity", self.activity_command))
         self.application.add_handler(CommandHandler("wordcloud", self.wordcloud_command))
         self.application.add_handler(CommandHandler("temperature", self.temperature_command))
-        
-        # Команды сбора данных
         self.application.add_handler(CommandHandler("collect_history", self.collect_history_command))
-        
-        # Команды управления группами
         self.application.add_handler(CommandHandler("groups", self.groups_command))
         self.application.add_handler(CommandHandler("group_report", self.group_report_command))
         self.application.add_handler(CommandHandler("group_activity", self.group_activity_command))
         self.application.add_handler(CommandHandler("group_mentions", self.group_mentions_command))
-        
-        # Обработчик кнопок
-        self.application.add_handler(CallbackQueryHandler(self.button_callback))
         
         logger.info("Обработчики команд настроены")
     
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик команды /start"""
         user = update.effective_user
-        
         welcome_message = f"""
 🤖 **Добро пожаловать в Chat Analyzer Bot!**
 
@@ -113,7 +95,6 @@ class ChatAnalyzerBot:
 
 💡 **Использование:** Отправьте команду в группе или в личных сообщениях.
         """
-        
         await update.message.reply_text(welcome_message, parse_mode=ParseMode.MARKDOWN)
     
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -141,14 +122,12 @@ class ChatAnalyzerBot:
 • `/collect_history 30` - собрать историю за 30 дней
 • `/group_report -1001234567890 7` - отчет по группе за неделю
         """
-        
         await update.message.reply_text(help_text, parse_mode=ParseMode.MARKDOWN)
     
     async def myid_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показывает информацию о пользователе"""
         user = update.effective_user
         is_admin = user.id in self.admin_user_ids
-        
         admin_list = ", ".join(map(str, self.admin_user_ids))
         
         message = f"""
@@ -162,68 +141,21 @@ class ChatAnalyzerBot:
 🔧 **Права администратора:** {'✅ Да' if is_admin else '❌ Нет'}
 
 📋 **Текущие администраторы:** {admin_list}
-
-💡 **Для добавления администратора:**
-Обновите переменную ADMIN_USER_IDS в Railway Dashboard
         """
-        
         await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN)
-    
-    async def status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Показывает статус бота"""
-        try:
-            # Проверяем базу данных
-            db_status = "✅ Работает" if self.db else "❌ Ошибка"
-            
-            # Проверяем количество сообщений
-            total_messages = len(self.db.get_all_messages()) if self.db else 0
-            
-            # Проверяем количество групп
-            groups = self.db.get_monitored_groups() if self.db else []
-            groups_count = len(groups)
-            
-            status_message = f"""
-🤖 **СТАТУС БОТА**
-
-📊 **База данных:** {db_status}
-💬 **Сообщений в базе:** {total_messages}
-👥 **Отслеживаемых групп:** {groups_count}
-
-⏰ **Время сервера:** {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}
-🔄 **Версия:** 2.0 (рефакторинг)
-
-**📋 Группы в базе:**
-"""
-            
-            if groups:
-                for group in groups[:5]:  # Показываем первые 5
-                    status_message += f"• {group['title']} (ID: {group['chat_id']})\n"
-                if len(groups) > 5:
-                    status_message += f"... и еще {len(groups) - 5} групп"
-            else:
-                status_message += "• Нет данных о группах"
-            
-            await update.message.reply_text(status_message, parse_mode=ParseMode.MARKDOWN)
-            
-        except Exception as e:
-            await update.message.reply_text(f"❌ Ошибка при получении статуса: {e}")
     
     async def report_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Генерирует ежедневный отчет"""
         chat_id = update.effective_chat.id
         
         try:
-            # Получаем данные за последние 7 дней
             messages = self.db.get_messages_for_period(chat_id, 7)
             
             if not messages:
                 await update.message.reply_text("📊 Нет данных для отчета за последние 7 дней")
                 return
             
-            # Генерируем отчет
             report = self.report_generator.generate_daily_report(chat_id, 7)
-            
-            # Отправляем отчет
             await update.message.reply_text(report, parse_mode=ParseMode.MARKDOWN)
             
         except Exception as e:
@@ -235,25 +167,21 @@ class ChatAnalyzerBot:
         chat_id = update.effective_chat.id
         
         try:
-            # Получаем статистику активности
             user_stats = self.db.get_user_activity_stats(chat_id, 7)
             
             if not user_stats:
                 await update.message.reply_text("📊 Нет данных об активности пользователей")
                 return
             
-            # Формируем отчет
             activity_report = "📊 **АКТИВНОСТЬ ПОЛЬЗОВАТЕЛЕЙ**\n\n"
             activity_report += f"📅 **Период:** Последние 7 дней\n\n"
             
-            for i, user in enumerate(user_stats[:10], 1):  # Топ 10
-                # Получаем отображаемое имя
+            for i, user in enumerate(user_stats[:10], 1):
                 display_name = user.get('display_name', '')
                 username = user.get('username', '')
                 first_name = user.get('first_name', '')
                 last_name = user.get('last_name', '')
                 
-                # Формируем красивое имя
                 if display_name and display_name != f"Пользователь {user['user_id']}":
                     user_name = display_name
                 elif username:
@@ -291,13 +219,10 @@ class ChatAnalyzerBot:
                 await update.message.reply_text("☁️ Недостаточно данных для создания облака слов")
                 return
             
-            # Формируем отчет о популярных словах
             wordcloud_report = "☁️ **ОБЛАКО СЛОВ**\n\n"
             wordcloud_report += f"📊 **Популярные слова в чате за последние 7 дней:**\n\n"
             
-            # Показываем топ-15 слов
             for i, (word, count) in enumerate(word_data[:15], 1):
-                # Добавляем эмодзи в зависимости от частоты
                 if count >= 10:
                     emoji = "🔥"
                 elif count >= 5:
@@ -323,31 +248,21 @@ class ChatAnalyzerBot:
         chat_id = update.effective_chat.id
         
         try:
-            # Получаем последние сообщения
-            messages = self.db.get_messages_for_period(chat_id, 1)  # За последний день
+            messages = self.db.get_messages_for_period(chat_id, 1)
             
             if not messages:
                 await update.message.reply_text("🌡️ Нет данных для анализа температуры беседы")
                 return
             
-            # Анализируем температуру
             texts = [msg['text'] for msg in messages if msg['text']]
             temperature_result = self.conversation_analyzer.analyze_conversation_temperature(texts)
             
-            # Формируем отчет
             temp_report = f"""
 🌡️ **ТЕМПЕРАТУРА БЕСЕДЫ**
 
 📊 **Оценка:** {temperature_result['temperature']}/10 {temperature_result['emoji']}
 📝 **Описание:** {temperature_result['description']}
 🎯 **Уверенность:** {temperature_result['confidence']:.1f}%
-
-📈 **Детали анализа:**
-• Положительных маркеров: {temperature_result['positive_count']}
-• Отрицательных маркеров: {temperature_result['negative_count']}
-• Срочных маркеров: {temperature_result['urgent_count']}
-• Вопросов: {temperature_result['question_count']}
-• Решений: {temperature_result['resolution_count']}
 
 💡 **Рекомендации:**
 {temperature_result['recommendations']}
@@ -364,12 +279,10 @@ class ChatAnalyzerBot:
         user_id = update.effective_user.id
         chat_id = update.effective_chat.id
         
-        # Проверяем права администратора
         if user_id not in self.admin_user_ids:
             await update.message.reply_text("❌ У вас нет прав администратора")
             return
         
-        # Получаем количество дней
         days = 45
         if context.args:
             try:
@@ -382,25 +295,20 @@ class ChatAnalyzerBot:
                 return
         
         try:
-            # Отправляем начальное сообщение
             status_message = await update.message.reply_text(
-                f"🔄 Начинаем сбор истории за {days} дней...\n"
-                f"📊 Это может занять некоторое время..."
+                f"🔄 Начинаем сбор истории за {days} дней..."
             )
             
-            # Функция для обновления прогресса
             async def progress_callback(message: str):
                 try:
                     await status_message.edit_text(message)
                 except:
                     pass
             
-            # Собираем историю
             result = await self.history_collector.collect_real_chat_history(
                 chat_id, days, progress_callback
             )
             
-            # Формируем финальный отчет
             final_report = f"""
 ✅ **СБОР ИСТОРИИ ЗАВЕРШЕН!**
 
@@ -410,12 +318,9 @@ class ChatAnalyzerBot:
 • Период: {result['period_days']} дней
 • Источник: {result['source']}
 
-📅 **Период:** {result['start_date'].strftime('%d.%m.%Y')} - {result['end_date'].strftime('%d.%m.%Y')}
-
 🎯 **Следующие шаги:**
 • Используйте `/report` для получения отчета
 • Используйте `/activity` для анализа активности
-• Используйте `/wordcloud` для облака слов
             """
             
             await status_message.edit_text(final_report, parse_mode=ParseMode.MARKDOWN)
@@ -443,13 +348,8 @@ class ChatAnalyzerBot:
             
             for i, group in enumerate(groups, 1):
                 title = group.get('title', f'Группа {group["chat_id"]}')
-                chat_type = group.get('chat_type', 'неизвестно')
-                members_count = group.get('member_count', 'неизвестно')
-                
                 groups_text += f"{i}. **{title}**\n"
-                groups_text += f"   🆔 ID: `{group['chat_id']}`\n"
-                groups_text += f"   📝 Тип: {chat_type}\n"
-                groups_text += f"   👥 Участников: {members_count}\n\n"
+                groups_text += f"   🆔 ID: `{group['chat_id']}`\n\n"
             
             await update.message.reply_text(groups_text, parse_mode=ParseMode.MARKDOWN)
             
@@ -466,7 +366,6 @@ class ChatAnalyzerBot:
             await update.message.reply_text("❌ У вас нет прав администратора")
             return
         
-        # Если команда вызвана в группе, используем текущую группу
         if chat_id < 0:  # Это группа
             target_chat_id = chat_id
             days = 7
@@ -474,46 +373,31 @@ class ChatAnalyzerBot:
                 try:
                     days = int(context.args[0])
                 except ValueError:
-                    await update.message.reply_text("❌ Неверный формат количества дней. Пример: `/group_report 7`")
+                    await update.message.reply_text("❌ Неверный формат количества дней")
                     return
         else:  # Это личные сообщения
-            # Получаем ID группы из аргументов
             if not context.args:
-                # Показываем список групп
                 await self.groups_command(update, context)
                 return
             
             try:
                 target_chat_id = int(context.args[0])
+                days = int(context.args[1]) if len(context.args) > 1 else 7
             except ValueError:
-                await update.message.reply_text("❌ Неверный формат ID группы. Пример: `/group_report -1001335359141`")
+                await update.message.reply_text("❌ Неверный формат параметров")
                 return
-            
-            # Получаем количество дней из аргументов или используем значение по умолчанию
-            days = 7
-            if len(context.args) > 1:
-                try:
-                    days = int(context.args[1])
-                except ValueError:
-                    await update.message.reply_text("❌ Неверный формат количества дней")
-                    return
         
         try:
-            # Получаем данные группы
             messages = self.db.get_messages_for_period(target_chat_id, days)
             user_stats = self.db.get_user_activity_stats(target_chat_id, days)
-            mention_stats = self.db.get_mention_stats(target_chat_id, days)
-            task_stats = self.db.get_task_stats(target_chat_id, days)
             
             if not messages:
                 await update.message.reply_text(f"❌ Нет данных для группы {target_chat_id} за последние {days} дней.")
                 return
             
-            # Получаем название группы
             chat_info = self.db.get_chat_info(target_chat_id)
             group_title = chat_info.get('title', f'Группа {target_chat_id}') if chat_info else f'Группа {target_chat_id}'
             
-            # Генерируем отчет
             report = f"""
 📊 **ОТЧЕТ ПО ГРУППЕ: {group_title}**
 
@@ -544,18 +428,6 @@ class ChatAnalyzerBot:
                 messages_count = user['messages_count']
                 report += f"{i}. **{user_name}** - {messages_count} сообщений\n"
             
-            if mention_stats:
-                report += f"\n**📢 ТОП-3 УПОМИНАНИЯ:**\n"
-                for i, mention in enumerate(mention_stats[:3], 1):
-                    report += f"{i}. **{mention['username']}** - {mention['count']} раз\n"
-            
-            if task_stats:
-                report += f"\n**📋 ЗАДАЧИ:**\n"
-                report += f"• Всего задач: {task_stats['total']}\n"
-                report += f"• Выполнено: {task_stats['completed']}\n"
-                report += f"• В процессе: {task_stats['in_progress']}\n"
-                report += f"• Просрочено: {task_stats['overdue']}\n"
-            
             await update.message.reply_text(report, parse_mode=ParseMode.MARKDOWN)
             
         except Exception as e:
@@ -571,7 +443,6 @@ class ChatAnalyzerBot:
             await update.message.reply_text("❌ У вас нет прав администратора")
             return
         
-        # Определяем целевую группу
         if chat_id < 0:  # Это группа
             target_chat_id = chat_id
             days = 7
@@ -583,7 +454,7 @@ class ChatAnalyzerBot:
                     return
         else:  # Это личные сообщения
             if not context.args:
-                await update.message.reply_text("❌ Укажите ID группы. Пример: `/group_activity -1001335359141 7`")
+                await update.message.reply_text("❌ Укажите ID группы")
                 return
             
             try:
@@ -594,7 +465,6 @@ class ChatAnalyzerBot:
                 return
         
         try:
-            # Получаем данные
             user_stats = self.db.get_user_activity_stats(target_chat_id, days)
             chat_info = self.db.get_chat_info(target_chat_id)
             group_title = chat_info.get('title', f'Группа {target_chat_id}') if chat_info else f'Группа {target_chat_id}'
@@ -603,18 +473,15 @@ class ChatAnalyzerBot:
                 await update.message.reply_text(f"📊 Нет данных об активности в группе {group_title}")
                 return
             
-            # Формируем отчет
             activity_info = f"📊 **АКТИВНОСТЬ В ГРУППЕ: {group_title}**\n\n"
             activity_info += f"📅 **Период:** Последние {days} дней\n\n"
             
-            for i, user in enumerate(user_stats[:10], 1):  # Топ 10 пользователей
-                # Получаем отображаемое имя пользователя
+            for i, user in enumerate(user_stats[:10], 1):
                 display_name = user.get('display_name', '')
                 username = user.get('username', '')
                 first_name = user.get('first_name', '')
                 last_name = user.get('last_name', '')
                 
-                # Формируем красивое имя
                 if display_name and display_name != f"Пользователь {user['user_id']}":
                     user_name = display_name
                 elif username:
@@ -648,7 +515,6 @@ class ChatAnalyzerBot:
             await update.message.reply_text("❌ У вас нет прав администратора")
             return
         
-        # Определяем целевую группу
         if chat_id < 0:  # Это группа
             target_chat_id = chat_id
             days = 7
@@ -660,7 +526,7 @@ class ChatAnalyzerBot:
                     return
         else:  # Это личные сообщения
             if not context.args:
-                await update.message.reply_text("❌ Укажите ID группы. Пример: `/group_mentions -1001335359141 7`")
+                await update.message.reply_text("❌ Укажите ID группы")
                 return
             
             try:
@@ -671,7 +537,6 @@ class ChatAnalyzerBot:
                 return
         
         try:
-            # Получаем данные
             mention_stats = self.db.get_mention_stats(target_chat_id, days)
             chat_info = self.db.get_chat_info(target_chat_id)
             group_title = chat_info.get('title', f'Группа {target_chat_id}') if chat_info else f'Группа {target_chat_id}'
@@ -680,11 +545,10 @@ class ChatAnalyzerBot:
                 await update.message.reply_text(f"📢 Нет данных об упоминаниях в группе {group_title}")
                 return
             
-            # Формируем отчет
             mentions_info = f"📢 **УПОМИНАНИЯ В ГРУППЕ: {group_title}**\n\n"
             mentions_info += f"📅 **Период:** Последние {days} дней\n\n"
             
-            for i, mention in enumerate(mention_stats[:10], 1):  # Топ 10 упоминаний
+            for i, mention in enumerate(mention_stats[:10], 1):
                 username = mention.get('username', f"Пользователь {mention['user_id']}")
                 count = mention['count']
                 
@@ -696,30 +560,6 @@ class ChatAnalyzerBot:
             logger.error(f"Ошибка при получении упоминаний группы: {e}")
             await update.message.reply_text(f"❌ Ошибка при получении упоминаний: {e}")
     
-    async def button_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обработчик нажатий на кнопки"""
-        query = update.callback_query
-        await query.answer()
-        
-        try:
-            data = query.data
-            if data.startswith('group_'):
-                # Обработка кнопок групп
-                await self._handle_group_button(query, data)
-        except Exception as e:
-            logger.error(f"Ошибка при обработке кнопки: {e}")
-            await query.edit_message_text("❌ Ошибка при обработке запроса")
-    
-    async def _handle_group_button(self, query, data):
-        """Обработка кнопок групп"""
-        try:
-            if data == 'groups_list':
-                await self.groups_command(update, context)
-            else:
-                await query.edit_message_text("🔧 Функция в разработке")
-        except Exception as e:
-            logger.error(f"Ошибка при обработке кнопки группы: {e}")
-    
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик всех сообщений"""
         try:
@@ -727,17 +567,15 @@ class ChatAnalyzerBot:
             if not message or not message.text:
                 return
             
-            # Получаем данные сообщения
             chat_id = message.chat.id
             user_id = message.from_user.id
             text = message.text
             message_id = message.message_id
             date = message.date
             
-            # Получаем отображаемое имя пользователя
             display_name = self._get_user_display_name(message.from_user)
             
-            # Сохраняем сообщение в базу
+            # Сохраняем сообщение
             self.db.save_message(
                 chat_id=chat_id,
                 user_id=user_id,
@@ -756,7 +594,7 @@ class ChatAnalyzerBot:
                     member_count=getattr(message.chat, 'member_count', None)
                 )
             
-            # Обновляем активность пользователя
+            # Обновляем активность
             self.db.update_user_activity(
                 chat_id=chat_id,
                 user_id=user_id,
@@ -803,46 +641,35 @@ class ChatAnalyzerBot:
             return f"Пользователь {user.id}"
     
     async def handle_webhook(self, update_dict: Dict):
-        """Обработчик webhook - основная точка входа"""
+        """Обработчик webhook"""
         try:
-            # Создаем объект Update
             update = Update.de_json(update_dict, self.application.bot)
             
-            # Проверяем на дублирование
             if update.update_id in self.processed_updates:
-                logger.info(f"Пропускаем дублированное обновление {update.update_id}")
                 return
             
             self.processed_updates.add(update.update_id)
             
-            # Ограничиваем размер кэша
             if len(self.processed_updates) > 1000:
                 self.processed_updates.clear()
             
-            # Логируем обновление
             user_id = update.effective_user.id if update.effective_user else 'неизвестно'
             chat_id = update.effective_chat.id if update.effective_chat else 'неизвестно'
             logger.info(f"Обрабатываем обновление {update.update_id}: пользователь {user_id} в чате {chat_id}")
             
-            # Обрабатываем сообщение
             if update.message:
                 await self.handle_message(update, None)
             
-            # Обрабатываем команды
             if update.message and update.message.text and update.message.text.startswith('/'):
-                await self.application.process_update(update)
-            
-            # Обрабатываем callback queries
-            if update.callback_query:
                 await self.application.process_update(update)
             
             logger.info(f"Обновление {update.update_id} успешно обработано")
             
         except Exception as e:
-            logger.error(f"Ошибка при обработке обновления {update.update_id if 'update' in locals() else 'неизвестно'}: {e}")
+            logger.error(f"Ошибка при обработке обновления: {e}")
 
 # Создаем экземпляр бота
-bot = ChatAnalyzerBot()
+bot = SimpleChatBot()
 
 # Создаем Flask приложение
 app = Flask(__name__)
@@ -851,30 +678,34 @@ app = Flask(__name__)
 def webhook():
     """Обработчик webhook от Telegram"""
     try:
-        # Получаем данные
         update_dict = request.get_json()
         
         if not update_dict:
             return jsonify({'status': 'error', 'message': 'No data received'}), 400
         
-        # Логируем webhook
         update_id = update_dict.get('update_id', 'неизвестно')
         logger.info(f"Получен webhook: {update_id}")
         
-        # Обрабатываем webhook синхронно для стабильности
-        try:
-            import asyncio
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
+        # Обрабатываем webhook синхронно
+        def process_webhook():
             try:
-                loop.run_until_complete(bot.handle_webhook(update_dict))
-            finally:
-                if not loop.is_closed():
-                    loop.close()
-                    
-        except Exception as e:
-            logger.error(f"Ошибка при обработке webhook: {e}")
+                import asyncio
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                
+                try:
+                    loop.run_until_complete(bot.handle_webhook(update_dict))
+                finally:
+                    if not loop.is_closed():
+                        loop.close()
+                        
+            except Exception as e:
+                logger.error(f"Ошибка при обработке webhook: {e}")
+        
+        # Запускаем в отдельном потоке
+        thread = threading.Thread(target=process_webhook)
+        thread.daemon = True
+        thread.start()
         
         logger.info(f"Webhook {update_id} успешно обработан")
         return jsonify({'status': 'ok'}), 200
@@ -887,18 +718,13 @@ def webhook():
 def health_check():
     """Проверка здоровья сервиса"""
     try:
-        # Проверяем базу данных
         db_status = "healthy" if bot.db else "unhealthy"
-        
-        # Проверяем бота
-        bot_status = "healthy"
         
         return jsonify({
             'status': 'healthy',
             'timestamp': datetime.now().isoformat(),
             'database': db_status,
-            'bot': bot_status,
-            'version': '2.0'
+            'version': '2.0-simple'
         }), 200
         
     except Exception as e:
@@ -912,12 +738,12 @@ def health_check():
 def home():
     """Главная страница"""
     return jsonify({
-        'service': 'Chat Analyzer Bot',
+        'service': 'Chat Analyzer Bot (Simple)',
         'status': 'running',
-        'version': '2.0',
+        'version': '2.0-simple',
         'timestamp': datetime.now().isoformat()
     }), 200
 
 if __name__ == '__main__':
-    logger.info("Запуск Flask приложения на порту 8080")
+    logger.info("Запуск упрощенного Flask приложения на порту 8080")
     app.run(host='0.0.0.0', port=8080, threaded=True)
